@@ -4,7 +4,8 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGroupBox, QSlider, QLabel, QTableWidget,
-    QTableWidgetItem, QSizePolicy, QFileDialog, QMessageBox
+    QTableWidgetItem, QSizePolicy, QFileDialog, QMessageBox,
+    QTabWidget
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -93,7 +94,9 @@ class ParetoCanvas(QWidget):
             if cont:
                 idx = ind["ind"][0]
                 items = self._build_counts(self.pf_inds[idx])[:10]
-                text = "\n".join(f"{emp}: {load}" for emp, load in items)
+                text = "\n".join(
+                    f"Сотрудник {emp}: {load} задач" for emp, load in items
+                )
                 self.annot.xy = self.pf_scatter.get_offsets()[idx]
                 self.annot.set_text(text)
                 self.annot.set_visible(True)
@@ -110,12 +113,13 @@ class ParetoCanvas(QWidget):
         else:
             data = self.inds[idx]
         self.pointSelected.emit(data)
+
     def _on_scroll(self, event):
 
         if event.xdata is None or event.ydata is None:
             return
 
-        base_scale = 1.2           
+        base_scale = 1.2
         scale = 1 / base_scale if event.button == "up" else base_scale
 
         ax = self.ax
@@ -134,20 +138,20 @@ class ParetoCanvas(QWidget):
                     event.ydata + (1 - rely) * y_range)
 
         self.canvas.draw_idle()
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Pareto-Front Viewer")
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        vbox = QVBoxLayout(central)
 
-        # график
-        self.plot = ParetoCanvas(populations, pareto_front, self)
+class ParetoTab(QWidget):
+    def __init__(self, pops, pfront, limit=10, parent=None):
+        super().__init__(parent)
+        self.limit = limit
+
+        vbox = QVBoxLayout(self)
+
+        self.plot = ParetoCanvas(pops, pfront, self)
         vbox.addWidget(self.plot, stretch=4)
+
         bottom = QHBoxLayout()
-        # слайдер эффективности
+
         controls = QGroupBox("Фильтр эффективности")
         slider = QSlider(Qt.Horizontal)
         slider.setRange(0, 100)
@@ -162,7 +166,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(lbl, alignment=Qt.AlignCenter)
         vbox.addWidget(controls)
 
-
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["Параметр", "Значение"])
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -175,41 +178,63 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.bar_canvas, stretch=2)
 
         vbox.addLayout(bottom, stretch=2)
+
         self.plot.pointSelected.connect(self.show_params)
+
+    def show_params(self, ind):
+        counts = self.plot._build_counts(ind)
+        if self.limit:
+            counts = counts[: self.limit]
+        self.table.setRowCount(len(counts))
+        for i, (emp, load) in enumerate(counts):
+            self.table.setItem(i, 0, QTableWidgetItem(f"Сотрудник {emp}"))
+            self.table.setItem(i, 1, QTableWidgetItem(str(load)))
+        self.table.sortItems(1, Qt.DescendingOrder)
+        self._draw_load_distribution(ind)
+
+    def _draw_load_distribution(self, individual):
+        counts = self.plot._build_counts(individual)
+        if self.limit:
+            counts = counts[: self.limit]
+        inspectors = [emp for emp, _ in counts]
+        tasks = [load for _, load in counts]
+        positions = range(len(inspectors))
+
+        self.bar_ax.clear()
+        self.bar_ax.bar(positions, tasks, color="#ffa600")
+        self.bar_ax.set_title("Нагрузка (кол-во задач)")
+        self.bar_ax.set_xlabel("Inspector idx")
+        self.bar_ax.set_ylabel("Tasks")
+        self.bar_ax.set_xticks(positions)
+        self.bar_ax.set_xticklabels(inspectors, rotation=45)
+        self.bar_fig.tight_layout()
+        self.bar_canvas.draw_idle()
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Pareto-Front Viewer")
+
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        self.tab_limited = ParetoTab(populations, pareto_front, limit=10)
+        self.tab_full = ParetoTab(populations, pareto_front, limit=None)
+
+        self.tabs.addTab(self.tab_limited, "Top 10")
+        self.tabs.addTab(self.tab_full, "All")
 
         save_act = self.menuBar().addAction("Save PNG…")
         save_act.triggered.connect(self.save_png)
 
         self.resize(900, 700)
-        
-    def show_params(self, ind):
-        counts = self.plot._build_counts(ind)
-        top = counts[:10]
-        self.table.setRowCount(len(top))
-        for i, (emp, load) in enumerate(top):
-            self.table.setItem(i, 0, QTableWidgetItem(f"Сотрудник {emp}"))
-            self.table.setItem(i, 1, QTableWidgetItem(str(load)))
-        self._draw_load_distribution(ind)
 
     def save_png(self):
         fn, _ = QFileDialog.getSaveFileName(self, "Сохранить график", "", "PNG (*.png)")
         if fn:
-            self.plot.fig.savefig(fn, dpi=300)
+            tab = self.tabs.currentWidget()
+            tab.plot.fig.savefig(fn, dpi=300)
             QMessageBox.information(self, "Сохранено", f"Изображение сохранено:\n{Path(fn).name}")
-    def _draw_load_distribution(self, individual):
-        # individual — список индексов инспекторов
-        counts = self.plot._build_counts(individual)[:10]
-        inspectors = [emp for emp, _ in counts]
-        tasks = [load for _, load in counts]
-
-        self.bar_ax.clear()
-        self.bar_ax.bar(inspectors, tasks, color="#ffa600")
-        self.bar_ax.set_title("Нагрузка (кол-во задач)")
-        self.bar_ax.set_xlabel("Inspector idx")
-        self.bar_ax.set_ylabel("Tasks")
-        self.bar_ax.tick_params(axis='x', rotation=45)
-        self.bar_fig.tight_layout()
-        self.bar_canvas.draw_idle()
 
 
 if __name__ == "__main__":
