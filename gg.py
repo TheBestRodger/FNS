@@ -27,7 +27,7 @@ class ParetoCanvas(QWidget):
         self.loads = np.asarray(self.loads, dtype=float)
         self.effs  = np.asarray(self.effs,  dtype=float)
         #self.loads, self.effs, self.inds = pops
-        pf_loads, pf_effs, _ = pfront
+        pf_loads, pf_effs, self.pf_inds = pfront
 
         self.fig = Figure(figsize=(5, 4), dpi=100)
         self.ax = self.fig.add_subplot(111)
@@ -49,10 +49,20 @@ class ParetoCanvas(QWidget):
             s=30, c="skyblue", alpha=.65, picker=True, label="All"
         )
         # парето
-        self.ax.scatter(
+        self.pf_scatter = self.ax.scatter(
             pf_loads, pf_effs,
-            s=70, color="crimson", label="Pareto Front"   # только точки
+            s=70, color="crimson", label="Pareto Front", picker=True  # только точки
         )
+        self.annot = self.ax.annotate(
+            "",
+            xy=(0, 0),
+            xytext=(10, 10),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round", fc="w"),
+            arrowprops=dict(arrowstyle="->"),
+        )
+        self.annot.set_visible(False)
+        self.canvas.mpl_connect("motion_notify_event", self._on_hover)
         # z = np.polyfit(self.loads, self.effs, deg=1)
         # p = np.poly1d(z)
         # x_line = np.linspace(min(self.loads), max(self.loads), 100)
@@ -70,9 +80,36 @@ class ParetoCanvas(QWidget):
         self.scatter.set_offsets([[x, y] for x, y, m in zip(self.loads, self.effs, mask) if m])
         self.canvas.draw_idle()
 
+    def _build_counts(self, individual):
+        counts = {}
+        for idx in individual:
+            counts[idx] = counts.get(idx, 0) + 1
+        return sorted(counts.items(), key=lambda x: x[1], reverse=True)
+
+    def _on_hover(self, event):
+        vis = self.annot.get_visible()
+        if event.inaxes == self.ax:
+            cont, ind = self.pf_scatter.contains(event)
+            if cont:
+                idx = ind["ind"][0]
+                items = self._build_counts(self.pf_inds[idx])[:10]
+                text = "\n".join(f"{emp}: {load}" for emp, load in items)
+                self.annot.xy = self.pf_scatter.get_offsets()[idx]
+                self.annot.set_text(text)
+                self.annot.set_visible(True)
+                self.canvas.draw_idle()
+                return
+        if vis:
+            self.annot.set_visible(False)
+            self.canvas.draw_idle()
+
     def _on_pick(self, ev):
         idx = ev.ind[0]
-        self.pointSelected.emit(self.inds[idx])
+        if ev.artist is self.pf_scatter:
+            data = self.pf_inds[idx]
+        else:
+            data = self.inds[idx]
+        self.pointSelected.emit(data)
     def _on_scroll(self, event):
 
         if event.xdata is None or event.ydata is None:
@@ -146,10 +183,12 @@ class MainWindow(QMainWindow):
         self.resize(900, 700)
         
     def show_params(self, ind):
-        self.table.setRowCount(len(ind))
-        for i, val in enumerate(ind):
-            self.table.setItem(i, 0, QTableWidgetItem(f"Param {i+1}"))
-            self.table.setItem(i, 1, QTableWidgetItem(str(val)))
+        counts = self.plot._build_counts(ind)
+        top = counts[:10]
+        self.table.setRowCount(len(top))
+        for i, (emp, load) in enumerate(top):
+            self.table.setItem(i, 0, QTableWidgetItem(f"Сотрудник {emp}"))
+            self.table.setItem(i, 1, QTableWidgetItem(str(load)))
         self._draw_load_distribution(ind)
 
     def save_png(self):
@@ -159,12 +198,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Сохранено", f"Изображение сохранено:\n{Path(fn).name}")
     def _draw_load_distribution(self, individual):
         # individual — список индексов инспекторов
-        counts = {}
-        for idx in individual:
-            counts[idx] = counts.get(idx, 0) + 1
-
-        inspectors = list(counts.keys())
-        tasks      = list(counts.values())
+        counts = self.plot._build_counts(individual)[:10]
+        inspectors = [emp for emp, _ in counts]
+        tasks = [load for _, load in counts]
 
         self.bar_ax.clear()
         self.bar_ax.bar(inspectors, tasks, color="#ffa600")
