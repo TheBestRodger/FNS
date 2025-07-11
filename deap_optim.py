@@ -262,7 +262,7 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
     recompute : bool, default False
         Ignore cached pickle and перезапустить GA.
     """
-    csv_path = Path(data_path) if data_path is not None else _DEFAULT_DATA
+    csv_path = "data/Automated_RSZ_distribution_enc.csv"#Path(data_path) if data_path is not None else _DEFAULT_DATA
 
     if not recompute and _CACHE_FILE.exists():
         try:
