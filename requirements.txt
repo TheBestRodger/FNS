@@ -1,0 +1,7 @@
+numpy
+pandas
+deap
+PySide6
+matplotlib
+scipy
+scikit-learn
