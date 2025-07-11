@@ -93,7 +93,9 @@ class ParetoCanvas(QWidget):
             if cont:
                 idx = ind["ind"][0]
                 items = self._build_counts(self.pf_inds[idx])[:10]
-                text = "\n".join(f"{emp}: {load}" for emp, load in items)
+                text = "\n".join(
+                    f"Сотрудник {emp}: {load} задач" for emp, load in items
+                )
                 self.annot.xy = self.pf_scatter.get_offsets()[idx]
                 self.annot.set_text(text)
                 self.annot.set_visible(True)
@@ -185,10 +187,14 @@ class MainWindow(QMainWindow):
     def show_params(self, ind):
         counts = self.plot._build_counts(ind)
         top = counts[:10]
+        # сортировка по убыванию нагрузки
+        top.sort(key=lambda x: x[1], reverse=True)
         self.table.setRowCount(len(top))
         for i, (emp, load) in enumerate(top):
             self.table.setItem(i, 0, QTableWidgetItem(f"Сотрудник {emp}"))
             self.table.setItem(i, 1, QTableWidgetItem(str(load)))
+        # сортировка таблицы по столбцу "Значение"
+        self.table.sortItems(1, Qt.DescendingOrder)
         self._draw_load_distribution(ind)
 
     def save_png(self):
@@ -201,13 +207,15 @@ class MainWindow(QMainWindow):
         counts = self.plot._build_counts(individual)[:10]
         inspectors = [emp for emp, _ in counts]
         tasks = [load for _, load in counts]
+        positions = range(len(inspectors))
 
         self.bar_ax.clear()
-        self.bar_ax.bar(inspectors, tasks, color="#ffa600")
+        self.bar_ax.bar(positions, tasks, color="#ffa600")
         self.bar_ax.set_title("Нагрузка (кол-во задач)")
         self.bar_ax.set_xlabel("Inspector idx")
         self.bar_ax.set_ylabel("Tasks")
-        self.bar_ax.tick_params(axis='x', rotation=45)
+        self.bar_ax.set_xticks(positions)
+        self.bar_ax.set_xticklabels(inspectors, rotation=45)
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
 
