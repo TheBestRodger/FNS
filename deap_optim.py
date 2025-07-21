@@ -237,6 +237,11 @@ def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
     no_inspectors_df, no_df = _filter_by_no(3700, inspectors_df, new_df)
     task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df)
 
+    if N == 0 or M == 0:
+        # нет данных для оптимизации
+        empty = ([], [], tuple())
+        return empty, empty
+
     hof, uniq_pareto = _multi_optimization(task_prob, N, M, task_cat, den_TNO)
 
     all_generations = hof.items
@@ -281,6 +286,56 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
         pass
 
     return populations, pareto_front
+
+
+def get_assignment_table(*,
+                         pareto_index: int = 0,
+                         no_code: int = 3700,
+                         data_path: str | Path | None = None,
+                         recompute: bool = False) -> pd.DataFrame:
+    """Return dataframe with task distribution for GUI table.
+
+    Parameters
+    ----------
+    pareto_index : int, default 0
+        Index of solution from Pareto front to use for distribution.
+    no_code : int, default 3700
+        Tax office code used to filter inspectors and tasks.
+    data_path : str | Path | None
+        CSV path.  If None → берём файл рядом с модулем.
+    recompute : bool, default False
+        Ignore cached pickle and перезапустить GA.
+    """
+
+    populations, pareto_front = get_results(
+        data_path=data_path, recompute=recompute
+    )
+
+    csv_path = "data/Automated_RSZ_distribution_enc.csv"
+
+    inspectors_df, new_df, _ = _prepare_dataframe(csv_path)
+    no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
+
+    uniq_pareto = pareto_front[2]
+    if len(uniq_pareto) == 0:
+        return pd.DataFrame()
+
+    result_df = no_df[
+        ['Статус РСЗ', 'Тип', 'Потенциальный ущерб, руб', 'ИНН НП',
+         'Инспектор, сменивший статус']
+    ].copy()
+    result_df['New Inspector index'] = uniq_pareto[pareto_index]
+    result_df.reset_index(inplace=True)
+    result_df['Статус РСЗ'] = result_df['Статус РСЗ'].replace('Новое', 'В работе')
+    result_df = result_df.merge(
+        no_inspectors_df.reset_index()[
+            ['Инспектор, сменивший статус', 'Inspector index']
+        ],
+        how='left',
+        left_on='New Inspector index',
+        right_on='Inspector index'
+    )
+    return result_df
 
 # ---------------------------------------------------------------------------
 #  Quick manual test ---------------------------------------------------------

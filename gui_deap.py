@@ -12,9 +12,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
 
-from deap_optim import get_results     
+from deap_optim import get_results, get_assignment_table
 
-populations, pareto_front = get_results() 
+populations, pareto_front = get_results()
+table_df = get_assignment_table()
 
 
 class ParetoCanvas(QWidget):
@@ -177,6 +178,11 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.bar_canvas, stretch=2)
 
         vbox.addLayout(bottom, stretch=2)
+
+        # таблица распределения задач
+        self.result_table = QTableWidget()
+        self._populate_result_table(table_df)
+        vbox.addWidget(self.result_table, stretch=3)
         self.plot.pointSelected.connect(self.show_params)
 
         save_act = self.menuBar().addAction("Save PNG…")
@@ -218,6 +224,17 @@ class MainWindow(QMainWindow):
         self.bar_ax.set_xticklabels(inspectors, rotation=45)
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
+
+    def _populate_result_table(self, df):
+        """Fill result table with assignments."""
+        self.result_table.setColumnCount(len(df.columns))
+        self.result_table.setRowCount(len(df))
+        self.result_table.setHorizontalHeaderLabels(df.columns.tolist())
+        for i in range(len(df)):
+            for j, col in enumerate(df.columns):
+                item = QTableWidgetItem(str(df.iloc[i, j]))
+                self.result_table.setItem(i, j, item)
+        self.result_table.resizeColumnsToContents()
 
 
 if __name__ == "__main__":
