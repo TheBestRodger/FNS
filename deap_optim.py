@@ -1,27 +1,3 @@
-"""
-pareto_data.py  ─ Library to run the inspector-task multi-objective
-optimisation and provide only the artefacts that нужны для визуализации:
-
-    • populations   – (loads, efficiencies, individuals)
-    • pareto_front  – (loads_pf, efficiencies_pf, pareto_individuals)
-
-The heavy GA расчёт выполняется один раз, результат кэшируется в pickle
-рядом с модулем.  Повторный импорт или вызов `get_results()` мгновенный.
-
-Usage
------
->>> from pareto_data import get_results
->>> pops, pf = get_results()               # берём готовые данные
->>> x_all, y_all, _ = pops                 # распаковка, как в ноутбуке
-
-Если нужно пересчитать (например, изменили CSV или настройки алгоритма):
->>> pops, pf = get_results(recompute=True)
-
-Optional
-~~~~~~~~
-`data_path`  – путь к *Automated_RSZ_distribution_enc.csv*; если не указан,
-               ожидается файл рядом с этим модулем.
-"""
 from __future__ import annotations
 
 import pickle
@@ -33,34 +9,71 @@ import numpy as np
 import pandas as pd
 from deap import base, creator, tools, algorithms
 import random
+from datetime import datetime, timedelta
 
 # ---------------------------------------------------------------------------
 #  Files & caching
 # ---------------------------------------------------------------------------
 _CACHE_FILE = Path(__file__).with_suffix(".pkl")
-_DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
+_DEFAULT_DATA = Path(__file__+"cache/").with_name("Automated_RSZ_distribution_enc.csv")
 
 # ---------------------------------------------------------------------------
 #  Core pipeline (directly перенесено из ноутбука)
 # ---------------------------------------------------------------------------
+def get_new_type_data(day: str = '2024-06-27', df: pd.DataFrame = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    # df = df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
+    day += ' 00:00:00'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    day_str = datetime.strptime(day, date_format)
+    day_before_str = day_str - timedelta(days=1)
+    
+    day_df = df[df['Дата изменения статуса РСЗ'] <= day_str]    
 
+    cutten_day_df = day_df[day_df['Дата изменения статуса РСЗ'] > day_before_str]
+    new_tasks_df = cutten_day_df[cutten_day_df['Статус РСЗ'] == 'Новое'].groupby('№ схемы/риска')[['Статус РСЗ', 'Тип', 'Дата изменения статуса РСЗ', 'Потенциальный ущерб, руб', 'ИНН НП']].last()
+    
+    inwork_tasks_df = df[df['Дата изменения статуса РСЗ'] <= day_before_str].groupby('№ схемы/риска')[['Статус РСЗ', 'Тип', 'Инспектор, сменивший статус', 'Код НО инспектора, сменившего стат', 'Дата изменения статуса РСЗ', 'Потенциальный ущерб, руб', 'ИНН НП']].last()
+    new_tasks_df = pd.concat([new_tasks_df, inwork_tasks_df[inwork_tasks_df['Статус РСЗ'] == 'Новое']])
+    new_tasks_df.drop(columns=['Инспектор, сменивший статус', 'Код НО инспектора, сменившего стат'], inplace=True)
+    inwork_tasks_df = inwork_tasks_df[inwork_tasks_df['Статус РСЗ'] != 'Новое']
+    finish_tasks_df = inwork_tasks_df[inwork_tasks_df['Статус РСЗ'] != 'В работе']
+    inwork_tasks_df = inwork_tasks_df[inwork_tasks_df['Статус РСЗ'] == 'В работе']
+    
+    return new_tasks_df, inwork_tasks_df, finish_tasks_df
 def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int]]:
     """Load & preprocess source CSV.  Returns (inspectors_df, new_df, distribution_new_tasks)."""
+    
     df = pd.read_csv(csv_path, sep=';')
+    df = df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
 
     # -- Чистка / типы -------------------------------------------------------
-    df = df.drop(index=df[(df['Инспектор, сменивший статус'].isna()) & (df['Статус РСЗ'] != 'Новое')].index)
+    drop_list = df[(df['Инспектор, сменивший статус'].isna()) & (df['Статус РСЗ'] != 'Новое')]['№ схемы/риска'].unique()
+    df = df.drop(index=df[df['№ схемы/риска'].isin(drop_list)].index)
     df.loc[df['Код НО инспектора, сменившего стат']=='000n', 'Код НО инспектора, сменившего стат'] = 0
+
     df.drop_duplicates(inplace=True)
     df['Дата выявления'] = pd.to_datetime(df['Дата выявления'], format='%Y-%m-%d %H:%M:%S')
     df['Дата изменения статуса РСЗ'] = pd.to_datetime(df['Дата изменения статуса РСЗ'], format='%Y-%m-%d %H:%M:%S')
     df['Код НО инспектора, сменившего стат'] = df['Код НО инспектора, сменившего стат'].astype(int)
-    df['Тип'] = df['Тип'].replace({
-        'Риск_долго': 'RISK_LONG',
-        'Риск_быстро': 'RISK_SHORT',
-        'Схема': 'SCHEMA',
-        'Задание': 'TASK'
-    }, regex=True)
+    
+    
+    df['Тип'] = df['Тип'].replace(
+        to_replace={
+            'Риск_долго': 'RISK_LONG',
+            'Риск_быстро': 'RISK_SHORT',
+            'Схема': 'SCHEMA', 
+            'Задание': 'Task'
+        },
+        regex=True)
+    
+    grouped_analiz_df = df.groupby('№ схемы/риска')[['Статус РСЗ', 'Тип', 'Инспектор, сменивший статус']].last()
+    grouped_analiz_df[grouped_analiz_df['Статус РСЗ'] == 'Новое']
+    copy_df = df.copy()
+    new_tasks_df, inwork_tasks_df, finish_tasks_df = get_new_type_data('2024-06-27', copy_df)
+    inn_df = inwork_tasks_df.groupby('ИНН НП')[['Инспектор, сменивший статус', 'Код НО инспектора, сменившего стат']].last() #Большая заглушка не все работы с одним ИНН идут одному работнику. Даже ни в один ТНО порой. Пример ИНН: 972-qyi-xxuq-qkjkk
+    auto_dis = new_tasks_df.merge(inn_df, how='inner', left_on='ИНН НП', right_index=True)
+    inwork_tasks_df = pd.concat([inwork_tasks_df, auto_dis])
+    new_tasks_df.drop(index=auto_dis.index, inplace=True)
 
     # -- Подсчёт Auto_Stats (зашито как в ноутбуке) --------------------------
     Auto_Stats = pd.DataFrame({
@@ -81,19 +94,18 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
         'Выполнено':                                               [0, 0, 0, 3],
         'Не выполнено':                                            [0, 0, 0, 0],
     }).transpose()
+    
     Auto_Stats.columns = ['SCHEMA', 'RISK_LONG', 'RISK_SHORT', 'TASK']
-    all_scores = [Auto_Stats.loc[stat, df.iloc[i, 1]] for i, stat in enumerate(df['Статус РСЗ'])]
-    df['Score'] = all_scores
+
+    all_scores = [Auto_Stats.loc[stat, df.iloc[i, 1]] for i, stat in enumerate(finish_tasks_df['Статус РСЗ'])]
+    finish_tasks_df['Score'] = all_scores
+
+ 
     # -- Inspectors table ----------------------------------------------------
-    N_ended_works = df[df['Score'] > 0].groupby('Инспектор, сменивший статус')['Score'].count()
-    inspectors_df = pd.DataFrame(df.groupby('Инспектор, сменивший статус')['Код НО инспектора, сменившего стат'].last())
-    inspectors_efficiency = (
-        df[df['Score'] > 0]
-          .groupby('Инспектор, сменивший статус')['Score']
-          .sum() / N_ended_works / 100
-    )
-    inspectors_df = pd.DataFrame(df.groupby('Инспектор, сменивший статус')['Код НО инспектора, сменившего стат'].last())
-    inspectors_efficiency = df[df['Score'] > 0].groupby('Инспектор, сменивший статус')['Score'].sum()/N_ended_works/100
+    N_ended_works = finish_tasks_df[finish_tasks_df['Score'] > 0].groupby('Инспектор, сменивший статус')['Score'].count()
+
+    inspectors_df = pd.DataFrame(copy_df.groupby('Инспектор, сменивший статус')['Код НО инспектора, сменившего стат'].last())
+    inspectors_efficiency = finish_tasks_df[finish_tasks_df['Score'] > 0].groupby('Инспектор, сменивший статус')['Score'].sum()/N_ended_works/100
     inspectors_df = inspectors_df.merge(inspectors_efficiency, how='left', left_index=True, right_index=True)
     inspectors_df.fillna(0, inplace=True)
     inspectors_df['Experience'] = [np.random.random()/2 for i in range(len(inspectors_df))]
@@ -107,6 +119,8 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
     inspectors_df['p_RISK_SHORT'] = np.where(mask, 0, 0.5)
     inspectors_df['p_TASK'] = np.where(mask, 0, 0.5)
 
+    mask = inspectors_df['Qualification'] >= 0.71
+
     df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
     grouped_df = df.groupby('№ схемы/риска')[['Статус РСЗ', 'Тип', 'Инспектор, сменивший статус']].last()
     new_df = grouped_df[grouped_df['Статус РСЗ'] == 'Новое']
@@ -115,7 +129,7 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
     distribution_new_tasks.update((k, new_df['Тип'].value_counts().to_dict()[k])
                                   for k in set(distribution_new_tasks) & set(new_df['Тип'].value_counts()))
     print("Distribution of new tasks:", distribution_new_tasks)
-    return inspectors_df, new_df, distribution_new_tasks
+    return inspectors_df, new_df, distribution_new_tasks, inwork_tasks_df
 
 # ---------------------------------------------------------------------------
 #  Helper functions from notebook (unchanged)
@@ -153,39 +167,50 @@ def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame):
     return task_prob, N, M, task_cat, den_TNO
 
 
-def _evaluation(individual: list, den_TNO: dict, task_cat: np.array, task_prob: np.array, M: int, results: bool = False):
+def _evaluation(individual: list, den_TNO: dict, task_cat: np.array, 
+                task_prob: np.array, M: int, results: bool = False, current_individ: list = []):
+    full_ind = individual + current_individ
     K1, K2, K3, K4 = 100, 80, 46, 3
     K_SUM = K1 + K2 + K3 + K4
-
-    cnt = {cat: np.zeros(M, dtype=int) for cat in den_TNO}
-    for j, emp_idx in enumerate(individual):
+    cnt = {cat: np.zeros(M, dtype=int) for cat in den_TNO} 
+    for j, emp_idx in enumerate(full_ind):
         cnt[task_cat[j]][emp_idx] += 1
-
+        
     nu = (
         cnt["SCHEMA"]     / den_TNO["SCHEMA"]     * K1 +
         cnt["RISK_LONG"]  / den_TNO["RISK_LONG"]  * K2 +
         cnt["RISK_SHORT"] / den_TNO["RISK_SHORT"] * K3 +
         cnt["TASK"]       / den_TNO["TASK"]       * K4
     ) / K_SUM * 100
-
+    
+    
     efficiency = (
-        cnt["SCHEMA"]     * task_prob[:, 0] / den_TNO["SCHEMA"] +
-        cnt["RISK_LONG"]  * task_prob[:, 1] / den_TNO["RISK_LONG"] +
-        cnt["RISK_SHORT"] * task_prob[:, 2] / den_TNO["RISK_SHORT"] +
-        cnt["TASK"]       * task_prob[:, 3] / den_TNO["TASK"]
-    ).sum() * 100
-
+        cnt["SCHEMA"]     * task_prob[:, 0]   / den_TNO["SCHEMA"]     +
+        cnt["RISK_LONG"]  * task_prob[:, 1]   / den_TNO["RISK_LONG"]  +
+        cnt["RISK_SHORT"] * task_prob[:, 2]   / den_TNO["RISK_SHORT"] +
+        cnt["TASK"]       * task_prob[:, 3]   / den_TNO["TASK"]       
+    ).sum() *100
+    
     load = nu.max()
-    return (load, efficiency) if not results else (nu, efficiency)
+    if not results:
+        return load, efficiency,
+    return nu, efficiency,
 
 
-def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
-                        population_size=100, epoches=50, p_crossing=0.5, p_mutation=0.2):
-    random.seed(42)
-    np.random.seed(42)
+def _multi_optimization(no_code: int, inwork_tasks_df: pd.DataFrame, inspectors_df: pd.DataFrame,population_size: int = 200, 
+                        epoches: int = 100, p_crossing: float = 0.5, 
+                        p_mutation: float = 0.2):
 
-    func = partial(_evaluation, den_TNO=den_TNO, task_cat=task_cat, task_prob=task_prob, M=M)
+    no_inspectors_df, in_work_no_df = _filter_by_no(no_code,  inwork_tasks_df, inspectors_df)
 
+    in_work_indiv = in_work_no_df.merge(no_inspectors_df[['Inspector index']], left_on='Инспектор, сменивший статус', right_index=True, how='left')
+    in_work_indiv = in_work_indiv['Inspector index'].to_list()
+        
+    no_inspectors_df, no_df = _filter_by_no(no_code)
+    task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df, in_work_no_df)
+        
+    func = partial(_evaluation, den_TNO=den_TNO, task_cat=task_cat, task_prob=task_prob, M=M, current_individ=in_work_indiv)
+    
     creator.create('FintesMulti', base.Fitness, weights=(-1, 1)) # load ↓, efficiency ↑
     creator.create('Individual', list, fitness=creator.FintesMulti)
     
@@ -231,18 +256,18 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
 # ---------------------------------------------------------------------------
 
 def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
-    inspectors_df, new_df, _ = _prepare_dataframe(csv_path)
+    inspectors_df, new_df, _, inwork_tasks_df = _prepare_dataframe(csv_path)
     print("Inspectors DataFrame:", inspectors_df.head())
     print("New Tasks DataFrame:", new_df.head())
     no_inspectors_df, no_df = _filter_by_no(3700, inspectors_df, new_df)
     task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df)
 
-    if N == 0 or M == 0:
-        # нет данных для оптимизации
-        empty = ([], [], tuple())
-        return empty, empty
+    # if N == 0 or M == 0:
+    #     # нет данных для оптимизации
+    #     empty = ([], [], tuple())
+    #     return empty, empty
 
-    hof, uniq_pareto = _multi_optimization(task_prob, N, M, task_cat, den_TNO)
+    hof, uniq_pareto = _multi_optimization(task_prob, inwork_tasks_df,inspectors_df, N, M, task_cat, den_TNO)
 
     all_generations = hof.items
     populations_xy = list(zip(*[ind.fitness.values for ind in all_generations]))

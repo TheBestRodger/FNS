@@ -1,4 +1,4 @@
-cashe/
+cache/
 __pycache__/
 deap_optim.pkl
 viz.ipynb
