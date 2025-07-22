@@ -21,6 +21,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
 from deap_optim import get_results, get_assignment_table
+#from instects import get_results
 
 populations, pareto_front = get_results()
 assignment_df = get_assignment_table()

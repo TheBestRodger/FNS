@@ -255,7 +255,7 @@ def main() -> None:
             for idx, val in enumerate(params):
                 usage[idx][val] += 1
         for idx, counter in usage.items():
-            print(f"Param {idx}: {counter.most_common(5)}")   # топ‑5 популярных
+            print(f"Param {idx}: {counter.most_common(5)}")   # популярные 5 значений
 
     param_usage(result["explored"])
     print("Pareto front size:", len(result["pareto_front"]))
