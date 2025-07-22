@@ -34,6 +34,9 @@ class ParetoArchive:
 
     def update(self, candidates: List[Solution]) -> None:
         for cand in candidates:
+            if any(cand.scores == a.scores for a in self.archive):
+                continue            # пропускаем точную копию по метрикам
+        for cand in candidates:
             to_remove = set()
             dominated = False
             for arch in self.archive:
@@ -60,6 +63,8 @@ class AntColonyOptimizer:
         alpha: float = 1.0,
         beta: float = 2.0,
         evaporation: float = 0.5,
+        track: bool = True, 
+        verbose: bool = False
     ) -> None:
         self.func = func
         self.dim = len(param_ranges)
@@ -71,6 +76,9 @@ class AntColonyOptimizer:
         self.evaporation = evaporation
         self.pheromones = [np.ones(r[1] - r[0] + 1) for r in param_ranges]
         self.solutions: List[Solution] = []
+        self.track   = track      # следить за обучением?
+        self.verbose = verbose
+        self.history = []         # сюда пишем статистику по поколениям
 
     def sample_ant(self) -> List[int]:
         params = []
@@ -93,7 +101,7 @@ class AntColonyOptimizer:
 
     def run(self) -> Dict[str, Any]:
         archive = ParetoArchive()
-        for _ in range(self.n_iter):
+        for gen in range(self.n_iter):
             candidates = []
             for _ in range(self.n_ants):
                 params = self.sample_ant()
@@ -103,9 +111,26 @@ class AntColonyOptimizer:
                 self.solutions.append(sol)
             archive.update(candidates)
             self.update_pheromones(archive.get())
+        
+            # ── LOGGING ────────────────────────────────────────────
+            if self.track:
+                loads, effs = zip(*(s.scores for s in archive.get()))
+                self.history.append({
+                    "gen": gen,
+                    "pareto_size": len(loads),
+                    "best_load":  min(loads),
+                    "best_eff":   max(effs),        
+                    "avg_load":   sum(loads)/len(loads),
+                    "avg_eff":    sum(effs)/len(effs),
+                })
+            if self.verbose and gen % 5 == 0:
+                h = self.history[-1]
+                print(f"Gen {gen:3d}: Pareto {h['pareto_size']:3d}  "
+                      f"best_load={h['best_load']:.3f} best_eff={h['best_eff']:.3f}")
         return {
             "explored": [(sol.params, sol.scores) for sol in self.solutions],
             "pareto_front": [(sol.params, sol.scores) for sol in archive.get()],
+            "history": self.history,  # <── новое
         }
 
 
@@ -136,10 +161,35 @@ def main() -> None:
         n_iter=40,
     )
     result = optimizer.run()
+    import matplotlib.pyplot as plt
+
+    def plot_learning(history):
+        gens = [h["gen"] for h in history]
+        fig, ax1 = plt.subplots()
+
+        ax1.set_xlabel("Поколение")
+        ax1.set_ylabel("Best load / Avg load")
+        ax1.plot(gens, [h["best_load"] for h in history], label="best load", linestyle="--")
+        ax1.plot(gens, [h["avg_load"]  for h in history], label="avg load")
+        ax1.invert_yaxis()                     # если меньший load лучше
+        ax1.legend(loc="upper left")
+
+        ax2 = ax1.twinx()
+        ax2.set_ylabel("Best / Avg efficiency")
+        ax2.plot(gens, [h["best_eff"] for h in history], label="best eff", color="tab:red", linestyle="--")
+        ax2.plot(gens, [h["avg_eff"]  for h in history], label="avg eff",  color="tab:red")
+        ax2.legend(loc="upper right")
+
+        plt.title("Процесс обучения ACO")
+        plt.tight_layout()
+        plt.show()
+
+    plot_learning(result["history"])
 
     print("Pareto front size:", len(result["pareto_front"]))
     for params, scores in result["pareto_front"]:
         print(f"load={scores[0]:.2f}, eff={scores[1]:.2f}")
+
 
 
 if __name__ == "__main__":
