@@ -1,27 +1,3 @@
-"""
-pareto_data.py  ─ Library to run the inspector-task multi-objective
-optimisation and provide only the artefacts that нужны для визуализации:
-
-    • populations   – (loads, efficiencies, individuals)
-    • pareto_front  – (loads_pf, efficiencies_pf, pareto_individuals)
-
-The heavy GA расчёт выполняется один раз, результат кэшируется в pickle
-рядом с модулем.  Повторный импорт или вызов `get_results()` мгновенный.
-
-Usage
------
->>> from pareto_data import get_results
->>> pops, pf = get_results()               # берём готовые данные
->>> x_all, y_all, _ = pops                 # распаковка, как в ноутбуке
-
-Если нужно пересчитать (например, изменили CSV или настройки алгоритма):
->>> pops, pf = get_results(recompute=True)
-
-Optional
-~~~~~~~~
-`data_path`  – путь к *Automated_RSZ_distribution_enc.csv*; если не указан,
-               ожидается файл рядом с этим модулем.
-"""
 from __future__ import annotations
 
 import pickle
@@ -34,21 +10,15 @@ import pandas as pd
 from deap import base, creator, tools, algorithms
 import random
 
-# ---------------------------------------------------------------------------
-#  Files & caching
-# ---------------------------------------------------------------------------
-_CACHE_FILE = Path(__file__).with_suffix(".pkl")
-_DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
 
-# ---------------------------------------------------------------------------
-#  Core pipeline (directly перенесено из ноутбука)
-# ---------------------------------------------------------------------------
+_CACHE_FILE = Path(__file__).with_suffix(".pkl")
+# _DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
+# get_results И get_assignment_table используют статичный путь к CSV
 
 def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int]]:
     """Load & preprocess source CSV.  Returns (inspectors_df, new_df, distribution_new_tasks)."""
     df = pd.read_csv(csv_path, sep=';')
 
-    # -- Чистка / типы -------------------------------------------------------
     df = df.drop(index=df[(df['Инспектор, сменивший статус'].isna()) & (df['Статус РСЗ'] != 'Новое')].index)
     df.loc[df['Код НО инспектора, сменившего стат']=='000n', 'Код НО инспектора, сменившего стат'] = 0
     df.drop_duplicates(inplace=True)
@@ -62,7 +32,6 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
         'Задание': 'TASK'
     }, regex=True)
 
-    # -- Подсчёт Auto_Stats (зашито как в ноутбуке) --------------------------
     Auto_Stats = pd.DataFrame({
         'Новое':                                                   [0, 0, 0, 0],
         'В работе':                                                [0, 0, 0, 0],
@@ -84,7 +53,7 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
     Auto_Stats.columns = ['SCHEMA', 'RISK_LONG', 'RISK_SHORT', 'TASK']
     all_scores = [Auto_Stats.loc[stat, df.iloc[i, 1]] for i, stat in enumerate(df['Статус РСЗ'])]
     df['Score'] = all_scores
-    # -- Inspectors table ----------------------------------------------------
+
     N_ended_works = df[df['Score'] > 0].groupby('Инспектор, сменивший статус')['Score'].count()
     inspectors_df = pd.DataFrame(df.groupby('Инспектор, сменивший статус')['Код НО инспектора, сменившего стат'].last())
     inspectors_efficiency = (
@@ -101,7 +70,6 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
 
     mask = inspectors_df['Qualification'] >= 0.71
 
-    # Используем np.where для каждого столбца
     inspectors_df['p_SCHEMA'] = np.where(mask, 0.5, 0)
     inspectors_df['p_RISK_LONG'] = np.where(mask, 0.5, 0)
     inspectors_df['p_RISK_SHORT'] = np.where(mask, 0, 0.5)
@@ -119,8 +87,6 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
         ]
     ].last()
 
-    # dataset does not contain tasks with status "Новое"
-    # считаем новыми те задачи, что находятся в работе
     new_df = grouped_df[grouped_df['Статус РСЗ'] == 'В работе']
 
     distribution_new_tasks = {'RISK_SHORT': 1, 'SCHEMA': 1, 'RISK_LONG': 1, 'TASK': 1}
@@ -129,15 +95,11 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
     print("Distribution of new tasks:", distribution_new_tasks)
     return inspectors_df, new_df, distribution_new_tasks
 
-# ---------------------------------------------------------------------------
-#  Helper functions from notebook (unchanged)
-# ---------------------------------------------------------------------------
 
 def _filter_by_no(no_code: int, inspectors_df: pd.DataFrame, dataframe: pd.DataFrame):
     no_inspectors_df = inspectors_df[inspectors_df['Код НО инспектора, сменившего стат'] == no_code].copy()
     no_inspectors_df["Inspector index"] = np.arange(len(no_inspectors_df))
 
-    # Привязываем задачи к НО
     df2 = dataframe.merge(inspectors_df[['Код НО инспектора, сменившего стат']],
                           how='left',
                           left_on='Инспектор, сменивший статус',
@@ -148,17 +110,14 @@ def _filter_by_no(no_code: int, inspectors_df: pd.DataFrame, dataframe: pd.DataF
 
 
 def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame):
-    # Расчёт вероятности передачи определённого типа задачи сотруднику --> np.array(сотрудники, типы задач)
+
     task_prob = [inspectors_df['p_SCHEMA'].to_list(), inspectors_df['p_RISK_LONG'].to_list(), inspectors_df['p_RISK_SHORT'].to_list(), inspectors_df['p_TASK'].to_list(),]
     task_prob = np.array([*zip(*task_prob)])
     
-    # Определения числа распределяемых задач и числа сотрудников --> int, int
     N, M = df.__len__(), inspectors_df.__len__()
     
-    # Создание массива хранящего в себе тип задачи по порядку --> np.array(число распределяемых задач)
     task_cat = df['Тип'].to_numpy()
     
-    # Создание словаря хранящего количество распределяемых задач данного типа --> dict()
     den_TNO = {'RISK_SHORT': 1, 'SCHEMA': 1, 'RISK_LONG': 1, 'TASK': 1}
     den_TNO.update((k, df['Тип'].value_counts().to_dict()[k]) for k in set(den_TNO) & set(df['Тип'].value_counts().to_dict()))
     
@@ -238,9 +197,6 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
     print("Len of Pareto set:", len(uniq_pareto))
     return hall_of_fame, uniq_pareto
 
-# ---------------------------------------------------------------------------
-#  Main worker: run evolution & return artefacts -----------------------------
-# ---------------------------------------------------------------------------
 
 def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
     inspectors_df, new_df, _ = _prepare_dataframe(csv_path)
@@ -265,21 +221,10 @@ def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
 
     return tuple(populations_xy), tuple(pareto_xy)
 
-# ---------------------------------------------------------------------------
-#  Public API ----------------------------------------------------------------
-# ---------------------------------------------------------------------------
 
 def get_results(*, data_path: str | Path | None = None, recompute: bool = False):
-    """Return *(populations, pareto_front)*.
 
-    Parameters
-    ----------
-    data_path : str | Path | None
-        CSV path.  If None → берём файл рядом с модулем.
-    recompute : bool, default False
-        Ignore cached pickle and перезапустить GA.
-    """
-    csv_path = "data/Automated_RSZ_distribution_enc.csv"#Path(data_path) if data_path is not None else _DEFAULT_DATA
+    csv_path = "data/Automated_RSZ_distribution_enc.csv"
 
     if not recompute and _CACHE_FILE.exists():
         try:
@@ -290,7 +235,7 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
 
     populations, pareto_front = _run_evolution(csv_path)
 
-    # save cache (ignore errors silently)
+    # save cache
     try:
         with _CACHE_FILE.open('wb') as fh:
             pickle.dump((populations, pareto_front), fh)
@@ -299,7 +244,8 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
 
     return populations, pareto_front
 
-
+# получаем таблицу назначений задач инспекторам
+# (используется в GUI)
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
@@ -335,10 +281,7 @@ def get_assignment_table(*,
         right_on='Inspector index'
     )
     return result_df
-
-# ---------------------------------------------------------------------------
-#  Quick manual test ---------------------------------------------------------
-# ---------------------------------------------------------------------------
+# Тесты, чтоб проверить отдельные функции без GUI
 if __name__ == "__main__":
     pop, pf = get_results(recompute=True)
     print(
