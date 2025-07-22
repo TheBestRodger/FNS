@@ -305,19 +305,6 @@ def get_assignment_table(*,
                          no_code: int = 3700,
                          data_path: str | Path | None = None,
                          recompute: bool = False) -> pd.DataFrame:
-    """Return dataframe with task distribution for GUI table.
-
-    Parameters
-    ----------
-    pareto_index : int, default 0
-        Index of solution from Pareto front to use for distribution.
-    no_code : int, default 3700
-        Tax office code used to filter inspectors and tasks.
-    data_path : str | Path | None
-        CSV path.  If None → берём файл рядом с модулем.
-    recompute : bool, default False
-        Ignore cached pickle and перезапустить GA.
-    """
 
     populations, pareto_front = get_results(
         data_path=data_path, recompute=recompute
@@ -363,4 +350,4 @@ if __name__ == "__main__":
         f" {list(zip(pf[0], pf[1]))}"
     )
     print("Sample assignment table:")
-    print(get_assignment_table().head())
+    print(get_assignment_table())
