@@ -108,7 +108,15 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
     inspectors_df['p_TASK'] = np.where(mask, 0, 0.5)
 
     df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
-    grouped_df = df.groupby('№ схемы/риска')[['Статус РСЗ', 'Тип', 'Инспектор, сменивший статус']].last()
+    grouped_df = df.groupby('№ схемы/риска')[
+        [
+            'Статус РСЗ',
+            'Тип',
+            'Инспектор, сменивший статус',
+            'Потенциальный ущерб, руб',
+            'ИНН НП',
+        ]
+    ].last()
     # dataset does not contain tasks with status "Новое"
     # считаем новыми те задачи, что находятся в работе
     new_df = grouped_df[grouped_df['Статус РСЗ'] == 'В работе']
@@ -344,5 +352,13 @@ def get_assignment_table(*,
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     pop, pf = get_results(recompute=True)
-    print(f"Populations: {len(pop[0])} individuals → first 5: {list(zip(pop[0], pop[1]))[:5]}")
-    print(f"ParetoFront: {len(pf[0])} individuals → {list(zip(pf[0], pf[1]))}")
+    print(
+        f"Populations: {len(pop[0])} individuals → first 5:"
+        f" {list(zip(pop[0], pop[1]))[:5]}"
+    )
+    print(
+        f"ParetoFront: {len(pf[0])} individuals →"
+        f" {list(zip(pf[0], pf[1]))}"
+    )
+    print("Sample assignment table:")
+    print(get_assignment_table().head())
