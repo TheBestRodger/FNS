@@ -1,4 +1,6 @@
 import random
+import pickle
+from pathlib import Path
 from typing import Callable, Dict, List, Tuple, Any
 
 import numpy as np
@@ -9,6 +11,9 @@ from deap_optim import (
     _start_data_prep,
     _evaluation,
 )
+
+
+_CACHE_FILE = Path(__file__).with_suffix(".pkl")
 
 
 class Solution:
@@ -141,6 +146,61 @@ def _load_data(no_code: int = 3700):
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
     task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df)
     return task_prob, N, M, task_cat, den_TNO
+
+
+def _run_evolution() -> Tuple[Tuple, Tuple]:
+    task_prob, N, M, task_cat, den_TNO = _load_data()
+    if N == 0 or M == 0:
+        empty = ([], [], tuple())
+        return empty, empty
+
+    def evaluate(params: List[int]) -> Tuple[float, float]:
+        load, eff = _evaluation(params, den_TNO, task_cat, task_prob, M)
+        return float(load), float(eff)
+
+    param_ranges = [(0, M - 1)] * N
+    optimizer = AntColonyOptimizer(
+        func=evaluate,
+        param_ranges=param_ranges,
+        n_ants=30,
+        n_iter=40,
+        track=True,
+        verbose=False
+    )
+    result = optimizer.run()
+
+    explored = result["explored"]
+    loads = [score[0] for _, score in explored]
+    effs  = [score[1] for _, score in explored]
+    inds  = [params for params, _ in explored]
+    populations_xy = (tuple(loads), tuple(effs), tuple(inds))
+
+    pareto = result["pareto_front"]
+    pf_loads = [score[0] for _, score in pareto]
+    pf_effs  = [score[1] for _, score in pareto]
+    pf_inds  = [params for params, _ in pareto]
+    pareto_xy = (tuple(pf_loads), tuple(pf_effs), tuple(pf_inds))
+
+    return populations_xy, pareto_xy
+
+
+def get_results(*, recompute: bool = False) -> Tuple[Tuple, Tuple]:
+    if not recompute and _CACHE_FILE.exists():
+        try:
+            with _CACHE_FILE.open("rb") as fh:
+                return pickle.load(fh)
+        except Exception:
+            pass
+
+    populations, pareto_front = _run_evolution()
+
+    try:
+        with _CACHE_FILE.open("wb") as fh:
+            pickle.dump((populations, pareto_front), fh)
+    except OSError:
+        pass
+
+    return populations, pareto_front
 
 
 def main() -> None:
