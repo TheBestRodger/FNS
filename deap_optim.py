@@ -108,6 +108,7 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
     inspectors_df['p_TASK'] = np.where(mask, 0, 0.5)
 
     df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
+
     grouped_df = df.groupby('№ схемы/риска')[
         [
             'Статус РСЗ',
@@ -117,6 +118,7 @@ def _prepare_dataframe(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict
             'ИНН НП',
         ]
     ].last()
+
     # dataset does not contain tasks with status "Новое"
     # считаем новыми те задачи, что находятся в работе
     new_df = grouped_df[grouped_df['Статус РСЗ'] == 'В работе']
