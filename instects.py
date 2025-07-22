@@ -112,7 +112,7 @@ class AntColonyOptimizer:
             archive.update(candidates)
             self.update_pheromones(archive.get())
         
-            # ── LOGGING ────────────────────────────────────────────
+            # LOGGING 
             if self.track:
                 loads, effs = zip(*(s.scores for s in archive.get()))
                 self.history.append({
@@ -123,14 +123,14 @@ class AntColonyOptimizer:
                     "avg_load":   sum(loads)/len(loads),
                     "avg_eff":    sum(effs)/len(effs),
                 })
-            if self.verbose and gen % 5 == 0:
+            if self.verbose and gen % 5 == 0:  # печатать каждые 5 поколений
                 h = self.history[-1]
                 print(f"Gen {gen:3d}: Pareto {h['pareto_size']:3d}  "
                       f"best_load={h['best_load']:.3f} best_eff={h['best_eff']:.3f}")
         return {
             "explored": [(sol.params, sol.scores) for sol in self.solutions],
             "pareto_front": [(sol.params, sol.scores) for sol in archive.get()],
-            "history": self.history,  # <── новое
+            "history": self.history, # история обучения
         }
 
 
@@ -159,6 +159,8 @@ def main() -> None:
         param_ranges=param_ranges,
         n_ants=30,
         n_iter=40,
+        track=True,      
+        verbose=True     # печатать каждые 5 поколений
     )
     result = optimizer.run()
     import matplotlib.pyplot as plt
@@ -185,7 +187,17 @@ def main() -> None:
         plt.show()
 
     plot_learning(result["history"])
+    from collections import Counter, defaultdict
 
+    def param_usage(explored):
+        usage = defaultdict(Counter)
+        for params, _ in explored:
+            for idx, val in enumerate(params):
+                usage[idx][val] += 1
+        for idx, counter in usage.items():
+            print(f"Param {idx}: {counter.most_common(5)}")   # топ‑5 популярных
+
+    param_usage(result["explored"])
     print("Pareto front size:", len(result["pareto_front"]))
     for params, scores in result["pareto_front"]:
         print(f"load={scores[0]:.2f}, eff={scores[1]:.2f}")
