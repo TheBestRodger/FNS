@@ -23,46 +23,54 @@ def _filter_by_no(no_code: int, inspectors_df: pd.DataFrame, dataframe: pd.DataF
     # dataframe = dataframe.merge(inspectors_df[['Код НО инспектора, сменившего стат']], how='left', left_on='Инспектор, сменивший статус', right_index=True)
     dataframe['Код НО инспектора, сменившего стат'] = dataframe['Код НО инспектора, сменившего стат'].fillna(0).astype(int)
     no_df = dataframe[dataframe['Код НО инспектора, сменившего стат'] == no_code]
-    
+
     return no_inspectors_df, no_df
 
 
-def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame):
-
+def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame, in_work: pd.DataFrame = None):
+    # Расчёт вероятности передачи определённого типа задачи сотруднику --> np.array(сотрудники, типы задач)
     task_prob = [inspectors_df['p_SCHEMA'].to_list(), inspectors_df['p_RISK_LONG'].to_list(), inspectors_df['p_RISK_SHORT'].to_list(), inspectors_df['p_TASK'].to_list(),]
     task_prob = np.array([*zip(*task_prob)])
     
+    # Определения числа распределяемых задач и числа сотрудников --> int, int
     N, M = df.__len__(), inspectors_df.__len__()
     
-    task_cat = df['Тип'].to_numpy()
+    # Создание массива хранящего в себе тип задачи по порядку --> np.array(число распределяемых задач)
+    if in_work is not None:
+        concate_df = pd.concat([df, in_work])
+    else:
+        concate_df = df
+    task_cat = concate_df['Тип'].to_numpy()
     
+    # Создание словаря хранящего количество распределяемых задач данного типа --> dict()
     den_TNO = {'RISK_SHORT': 1, 'SCHEMA': 1, 'RISK_LONG': 1, 'TASK': 1}
-    den_TNO.update((k, df['Тип'].value_counts().to_dict()[k]) for k in set(den_TNO) & set(df['Тип'].value_counts().to_dict()))
+    den_TNO.update((k, concate_df['Тип'].value_counts().to_dict()[k]) for k in set(den_TNO) & set(concate_df['Тип'].value_counts().to_dict()))
     
     return task_prob, N, M, task_cat, den_TNO
 
 
-def _evaluation(individual: list, den_TNO: dict, task_cat: np.array, task_prob: np.array, M: int, results: bool = False):
+def _evaluation(individual: list, den_TNO: dict, task_cat: np.array, task_prob: np.array, M: int, results: bool = False, current_individ: list = []):
+    full_ind = individual + current_individ
     K1, K2, K3, K4 = 100, 80, 46, 3
     K_SUM = K1 + K2 + K3 + K4
-
-    cnt = {cat: np.zeros(M, dtype=int) for cat in den_TNO}
-    for j, emp_idx in enumerate(individual):
+    cnt = {cat: np.zeros(M, dtype=int) for cat in den_TNO} 
+    for j, emp_idx in enumerate(full_ind):
         cnt[task_cat[j]][emp_idx] += 1
-
+        
     nu = (
         cnt["SCHEMA"]     / den_TNO["SCHEMA"]     * K1 +
         cnt["RISK_LONG"]  / den_TNO["RISK_LONG"]  * K2 +
         cnt["RISK_SHORT"] / den_TNO["RISK_SHORT"] * K3 +
         cnt["TASK"]       / den_TNO["TASK"]       * K4
     ) / K_SUM * 100
-
+    
+    
     efficiency = (
-        cnt["SCHEMA"]     * task_prob[:, 0] / den_TNO["SCHEMA"] +
-        cnt["RISK_LONG"]  * task_prob[:, 1] / den_TNO["RISK_LONG"] +
-        cnt["RISK_SHORT"] * task_prob[:, 2] / den_TNO["RISK_SHORT"] +
-        cnt["TASK"]       * task_prob[:, 3] / den_TNO["TASK"]
-    ).sum() * 100
+        cnt["SCHEMA"]     * task_prob[:, 0]   / den_TNO["SCHEMA"]     +
+        cnt["RISK_LONG"]  * task_prob[:, 1]   / den_TNO["RISK_LONG"]  +
+        cnt["RISK_SHORT"] * task_prob[:, 2]   / den_TNO["RISK_SHORT"] +
+        cnt["TASK"]       * task_prob[:, 3]   / den_TNO["TASK"]       
+    ).sum() *100
 
     load = nu.max()
     return (load, efficiency) if not results else (nu, efficiency)
