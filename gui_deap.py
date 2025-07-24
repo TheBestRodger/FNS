@@ -47,58 +47,15 @@ from deap_optim import (
     _evaluation,
 )
 
-# ---------------------------------------------------------------------------
-#  Optimisation data --------------------------------------------------------
-# ---------------------------------------------------------------------------
-
-populations, pareto_front = get_results()
-assignment_df = get_assignment_table()
-
-# Prepare extra data for histograms ----------------------------------------
-inspector_df, new_df, inwork_df = _get_dataframe()
+DATA_DIR = Path("data")
 NO_CODE = 3700
 
-current_inspectors, current_df = _filter_by_no(NO_CODE, inspector_df, inwork_df)
-current_df = current_df.merge(
-    current_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
-    how="left",
-    left_on="Инспектор, сменивший статус",
-    right_on="Инспектор, сменивший статус",
-)
-current_individ = current_df["Inspector index"].to_list()
+# ---------------------------------------------------------------------------
+#  Data parameters ---------------------------------------------------------
+# ---------------------------------------------------------------------------
 
-no_inspectors, no_df = _filter_by_no(NO_CODE, inspector_df, new_df)
-
-task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors, no_df, current_df)
-
-future_individ = no_df[
-    [
-        "Статус РСЗ",
-        "Тип",
-        "Потенциальный ущерб, руб",
-        "ИНН НП",
-        "Инспектор, сменивший статус",
-    ]
-].copy()
-future_individ = future_individ.merge(
-    no_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
-    how="left",
-    left_on="Инспектор, сменивший статус",
-    right_on="Инспектор, сменивший статус",
-)
-future_individ = future_individ["Inspector index"].to_list()
-future_load, future_eff = _evaluation(
-    future_individ,
-    den_TNO,
-    task_cat,
-    task_prob,
-    M,
-    results=True,
-    current_individ=current_individ,
-)
-
-sorted_future_load = np.sort(future_load)[::-1]
-inspectors_index = list(range(len(current_inspectors)))
+# The heavy optimisation data is loaded inside ``MainWindow`` so that it can
+# be reloaded when the user selects another CSV directory.
 
 # ---------------------------------------------------------------------------
 #  Scatter‑canvas with Pareto front -----------------------------------------
@@ -228,33 +185,91 @@ class ParetoCanvas(QWidget):
 # ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
+    def _load_data(self, data_dir: Path):
+        """Load optimisation and helper datasets from ``data_dir``."""
+
+        self.data_dir = Path(data_dir)
+
+        # Optimisation results
+        self.populations, self.pareto_front = get_results(data_dir=self.data_dir)
+        self.assignment_df = get_assignment_table(data_dir=self.data_dir)
+
+        # Additional data for histograms
+        inspector_df, new_df, inwork_df = _get_dataframe(self.data_dir)
+
+        self.current_inspectors, current_df = _filter_by_no(NO_CODE, inspector_df, inwork_df)
+        current_df = current_df.merge(
+            self.current_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
+            how="left",
+            left_on="Инспектор, сменивший статус",
+            right_on="Инспектор, сменивший статус",
+        )
+        self.current_individ = current_df["Inspector index"].to_list()
+
+        no_inspectors, no_df = _filter_by_no(NO_CODE, inspector_df, new_df)
+
+        self.task_prob, self.N, self.M, self.task_cat, self.den_TNO = _start_data_prep(
+            no_inspectors, no_df, current_df
+        )
+
+        future_individ = no_df[[
+            "Статус РСЗ",
+            "Тип",
+            "Потенциальный ущерб, руб",
+            "ИНН НП",
+            "Инспектор, сменивший статус",
+        ]].copy()
+        future_individ = future_individ.merge(
+            no_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
+            how="left",
+            left_on="Инспектор, сменивший статус",
+            right_on="Инспектор, сменивший статус",
+        )
+        future_individ = future_individ["Inspector index"].to_list()
+        future_load, self.future_eff = _evaluation(
+            future_individ,
+            self.den_TNO,
+            self.task_cat,
+            self.task_prob,
+            self.M,
+            results=True,
+            current_individ=self.current_individ,
+        )
+
+        self.sorted_future_load = np.sort(future_load)[::-1]
+        self.inspectors_index = list(range(len(self.current_inspectors)))
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pareto‑Front Viewer")
 
+        # Load optimisation data ---------------------------------------
+        self._load_data(DATA_DIR)
+
         central = QWidget()
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        self.root_layout = QVBoxLayout(central)
 
         # ----------- 1. Scatter (top) --------------------------------------
-        self.plot = ParetoCanvas(populations, pareto_front, self)
-        root.addWidget(self.plot, stretch=4)
+        self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
+        self.root_layout.addWidget(self.plot, stretch=4)
 
         # ----------- 2. Efficiency slider ----------------------------------
         filter_box = QGroupBox("Фильтр эффективности")
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, 100)
-        slider.setValue(0)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(0, 100)
+        self.slider.setValue(0)
         lbl = QLabel("≥ 0 %")
-        slider.valueChanged.connect(lambda v: (self.plot.filter_eff(v), lbl.setText(f"≥ {v} %")))
+        self.slider_label = lbl
+        self.slider.valueChanged.connect(self._on_slider)
         flay = QVBoxLayout(filter_box)
-        flay.addWidget(slider)
+        flay.addWidget(self.slider)
         flay.addWidget(lbl, alignment=Qt.AlignCenter)
-        root.addWidget(filter_box)
+        self.root_layout.addWidget(filter_box)
 
         # ----------- 3. Bottom area ----------------------------------------
         bottom = QHBoxLayout()
-        root.addLayout(bottom, stretch=3)
+        self.root_layout.addLayout(bottom, stretch=3)
 
         # 3‑A. Left pane – tables ------------------------------------------
         left_pane = QVBoxLayout()
@@ -266,7 +281,7 @@ class MainWindow(QMainWindow):
         left_pane.addWidget(self.table, stretch=1)
 
         self.result_table = QTableWidget()
-        self._populate_result_table(assignment_df)
+        self._populate_result_table(self.assignment_df)
         left_pane.addWidget(self.result_table, stretch=2)
 
         bottom.addLayout(left_pane, stretch=3)
@@ -322,11 +337,15 @@ class MainWindow(QMainWindow):
         save_act = self.menuBar().addAction("Save PNG…")
         save_act.triggered.connect(self.save_png)
 
+        load_act = self.menuBar().addAction("Load CSVs…")
+        load_act.triggered.connect(self.choose_csv_dir)
+
         self.resize(1020, 720)
 
     # ---------------- Slots & helpers -------------------------------------
 
     def show_params(self, ind):
+        ind = list(ind)
         counts = self.plot._build_counts(ind)
         top10 = sorted(counts[:10], key=lambda x: x[1], reverse=True)
         self.table.setRowCount(len(top10))
@@ -335,7 +354,22 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 1, QTableWidgetItem(str(load)))
         self.table.sortItems(1, Qt.DescendingOrder)
         self._draw_load_distribution(ind)
-        self._draw_pareto_distribution(ind)
+        loads, eff = _evaluation(
+            ind,
+            self.den_TNO,
+            self.task_cat,
+            self.task_prob,
+            self.M,
+            results=True,
+            current_individ=self.current_individ,
+        )
+        self._draw_future_load(loads, eff)
+        self._draw_pareto_distribution(loads, eff)
+
+    def _on_slider(self, value):
+        """Handle efficiency slider."""
+        self.plot.filter_eff(value)
+        self.slider_label.setText(f"≥ {value} %")
 
     # ----------- Histogram draw helpers ----------------------------------
 
@@ -355,11 +389,19 @@ class MainWindow(QMainWindow):
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
 
-    def _draw_future_load(self):
+    def _draw_future_load(self, loads=None, eff=None):
+        """Draw forecasted load distribution."""
+
+        if loads is None:
+            loads = self.sorted_future_load
+            eff = self.future_eff
+        else:
+            loads = np.sort(loads)[::-1]
+
         self.pred_ax.clear()
         self.pred_ax.bar(
-            inspectors_index,
-            sorted_future_load,
+            self.inspectors_index,
+            loads,
             width=0.8,
             label="Распределённая нагрузка",
             color="lightcoral",
@@ -369,35 +411,29 @@ class MainWindow(QMainWindow):
         self.pred_ax.set_ylabel("Текущая взвешенная нагрузка (%)")
         self.pred_ax.grid(True, alpha=0.3)
         self.pred_ax.legend()
-        self.pred_ax.set_title(f"Эффективность {round(future_eff, 2)}%")
+        if eff is not None:
+            self.pred_ax.set_title(f"Эффективность {round(eff, 2)}%")
         self.pred_fig.tight_layout()
         self.pred_canvas.draw_idle()
 
-    def _draw_pareto_distribution(self, individual):
-        load, eff = _evaluation(
-            individual,
-            den_TNO,
-            task_cat,
-            task_prob,
-            M,
-            results=True,
-            current_individ=current_individ,
-        )
-        sorted_load = np.sort(load)[::-1]
-        current_mean = load.mean()
-        std = load.std()
+    def _draw_pareto_distribution(self, loads, eff):
+        """Visualise comparison with baseline distribution."""
+
+        sorted_load = np.sort(loads)[::-1]
+        current_mean = loads.mean()
+        std = loads.std()
 
         self.pareto_ax.clear()
         self.pareto_ax.bar(
-            inspectors_index,
-            sorted_future_load,
+            self.inspectors_index,
+            self.sorted_future_load,
             width=0.8,
             label="Реальная будущая нагрузка",
             color="lightcoral",
             alpha=0.7,
         )
         self.pareto_ax.bar(
-            inspectors_index,
+            self.inspectors_index,
             sorted_load,
             width=0.8,
             label="Новая распределённая нагрузка",
@@ -406,7 +442,7 @@ class MainWindow(QMainWindow):
         )
         self.pareto_ax.axhline(y=current_mean, color="red", linestyle="--", alpha=0.7)
         self.pareto_ax.fill_between(
-            inspectors_index,
+            self.inspectors_index,
             current_mean - std,
             current_mean + std,
             color="orange",
@@ -439,6 +475,24 @@ class MainWindow(QMainWindow):
         if filename:
             self.plot.fig.savefig(filename, dpi=300)
             QMessageBox.information(self, "Сохранено", f"Изображение сохранено:\n{Path(filename).name}")
+
+    def choose_csv_dir(self):
+        """Select new directory with CSV files and reload data."""
+        new_dir = QFileDialog.getExistingDirectory(self, "Выбрать папку с CSV", str(self.data_dir))
+        if new_dir:
+            # reload data and refresh UI
+            self._load_data(Path(new_dir))
+
+            # rebuild scatter plot
+            self.root_layout.removeWidget(self.plot)
+            self.plot.deleteLater()
+            self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
+            self.root_layout.insertWidget(0, self.plot, stretch=4)
+            self.plot.pointSelected.connect(self.show_params)
+
+            # update tables and histograms
+            self._populate_result_table(self.assignment_df)
+            self._draw_future_load()
 
 
 # ---------------------------------------------------------------------------

@@ -123,14 +123,26 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
     print("Len of Pareto set:", len(uniq_pareto))
     return hall_of_fame, uniq_pareto
 
-def _get_dataframe():
-    inspectors_df = pd.read_csv("data/inspectors_df.csv")
-    new_df = pd.read_csv("data/new_tasks_df.csv")
-    inwork_df = pd.read_csv("data/inwork_tasks_df.csv")
+def _get_dataframe(data_dir: str | Path = "data"):
+    """Load required CSV files from ``data_dir``.
+
+    Parameters
+    ----------
+    data_dir : str or Path, optional
+        Path to directory containing ``inspectors_df.csv``, ``new_tasks_df.csv``
+        and ``inwork_tasks_df.csv``. Defaults to ``"data"``.
+    """
+
+    base = Path(data_dir)
+    inspectors_df = pd.read_csv(base / "inspectors_df.csv")
+    new_df = pd.read_csv(base / "new_tasks_df.csv")
+    inwork_df = pd.read_csv(base / "inwork_tasks_df.csv")
     return inspectors_df, new_df, inwork_df
 
-def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
-    inspectors_df, new_df, inwork_df = _get_dataframe()
+def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
+    """Run optimisation pipeline using CSVs from ``data_dir``."""
+
+    inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     print("Inspectors DataFrame:", inspectors_df.head())
     print("New Tasks DataFrame:", new_df.head())
     no_inspectors_df, no_df = _filter_by_no(3700, inspectors_df, new_df)
@@ -153,7 +165,7 @@ def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_path: str | Path | None = None, recompute: bool = False):
+def get_results(*, data_dir: str | Path = "data", recompute: bool = False):
 
     if not recompute and _CACHE_FILE.exists():
         try:
@@ -162,7 +174,7 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
         except Exception:
             pass  # повреждённый кеш → пересчитаем
 
-    populations, pareto_front = _run_evolution("data/Automated_RSZ_distribution_enc.csv")
+    populations, pareto_front = _run_evolution(data_dir)
 
     # save cache
     try:
@@ -178,14 +190,14 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
-                         data_path: str | Path | None = None,
+                         data_dir: str | Path = "data",
                          recompute: bool = False) -> pd.DataFrame:
 
     populations, pareto_front = get_results(
-        data_path=data_path, recompute=recompute
+        data_dir=data_dir, recompute=recompute
     )
 
-    inspectors_df, new_df, inwork_df = _get_dataframe()
+    inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
 
     uniq_pareto = pareto_front[2]
