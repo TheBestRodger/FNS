@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QSizePolicy,
     QVBoxLayout,
+    QFrame,
     QWidget,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
@@ -86,7 +88,7 @@ class ParetoCanvas(QWidget):
             self.loads,
             self.effs,
             s=30,
-            c="skyblue",
+            c="#4da6ff",
             alpha=0.65,
             picker=True,
             label="All",
@@ -250,6 +252,34 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.root_layout = QVBoxLayout(central)
 
+        # ----------- Header with logo and controls ------------------------
+        header = QHBoxLayout()
+        title_layout = QVBoxLayout()
+        title = QLabel("проект РСЗ")
+        subtitle = QLabel("НОЦ ФНС России и МГТУ им. Н. Э. Баумана")
+        title_layout.addWidget(title)
+        title_layout.addWidget(subtitle)
+        header.addLayout(title_layout)
+        header.addStretch(1)
+
+        self.save_btn = QPushButton("Save PNG…")
+        self.save_btn.clicked.connect(self.save_png)
+        self.load_btn = QPushButton("Load CSVs…")
+        self.load_btn.clicked.connect(self.choose_csv_dir)
+        header.addWidget(self.save_btn)
+        header.addWidget(self.load_btn)
+
+        logo = QLabel()
+        logo_path = Path(__file__).with_name("style").joinpath("logo.png")
+        logo.setPixmap(QPixmap(str(logo_path)).scaledToHeight(40, Qt.SmoothTransformation))
+        header.addWidget(logo)
+
+        self.root_layout.addLayout(header)
+        hline = QFrame()
+        hline.setFrameShape(QFrame.HLine)
+        hline.setFrameShadow(QFrame.Sunken)
+        self.root_layout.addWidget(hline)
+
         # ----------- 1. Scatter (top) --------------------------------------
         self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
         self.root_layout.addWidget(self.plot, stretch=4)
@@ -334,11 +364,6 @@ class MainWindow(QMainWindow):
         self.plot.pointSelected.connect(self.show_params)
         self._draw_future_load()  # initialise second histogram
 
-        save_act = self.menuBar().addAction("Save PNG…")
-        save_act.triggered.connect(self.save_png)
-
-        load_act = self.menuBar().addAction("Load CSVs…")
-        load_act.triggered.connect(self.choose_csv_dir)
 
         self.resize(1020, 720)
 
@@ -380,7 +405,7 @@ class MainWindow(QMainWindow):
         positions = range(len(inspectors))
 
         self.bar_ax.clear()
-        self.bar_ax.bar(positions, tasks, color="#ffa600")
+        self.bar_ax.bar(positions, tasks, color="#003366")
         self.bar_ax.set_title("Нагрузка (кол-во задач)")
         self.bar_ax.set_xlabel("Inspector idx")
         self.bar_ax.set_ylabel("Tasks")
@@ -404,7 +429,7 @@ class MainWindow(QMainWindow):
             loads,
             width=0.8,
             label="Распределённая нагрузка",
-            color="lightcoral",
+            color="#003366",
             alpha=0.7,
         )
         self.pred_ax.set_xlabel("Инспекторы (отсортированы по итоговой нагрузке)")
@@ -429,7 +454,7 @@ class MainWindow(QMainWindow):
             self.sorted_future_load,
             width=0.8,
             label="Реальная будущая нагрузка",
-            color="lightcoral",
+            color="#003366",
             alpha=0.7,
         )
         self.pareto_ax.bar(
@@ -437,7 +462,7 @@ class MainWindow(QMainWindow):
             sorted_load,
             width=0.8,
             label="Новая распределённая нагрузка",
-            color="lightblue",
+            color="#4da6ff",
             alpha=0.7,
         )
         self.pareto_ax.axhline(y=current_mean, color="red", linestyle="--", alpha=0.7)
@@ -445,7 +470,7 @@ class MainWindow(QMainWindow):
             self.inspectors_index,
             current_mean - std,
             current_mean + std,
-            color="orange",
+            color="#4da6ff",
             alpha=0.2,
             label=f"±1 σ ({std:.2f} %)",
         )
@@ -501,6 +526,15 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyleSheet(
+        """
+        QWidget { background-color: #001f3f; color: #e0f0ff; }
+        QPushButton { background-color: #003366; color: white; padding: 4px 8px; border: none; border-radius: 4px; }
+        QPushButton:hover { background-color: #004c8c; }
+        QGroupBox { border: 1px solid #004c8c; margin-top: 6px; }
+        QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; }
+        """
+    )
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
