@@ -1,6 +1,21 @@
+"""Pareto‑Front GUI (histograms moved to bottom‑right)
+
+Изменения:
+1. **Сверху** остаётся только scatter‑плот со сценарием Парето.
+2. **Справа снизу** расположена панель‑стэк из трёх гистограмм:
+   • «Распределение» (бар‑чарт выбранного решения)
+   • «Прогноз» (будущая нагрузка)
+   • «Парето» (сравнение старой/новой нагрузки)
+   Переключение — кнопками, находящимися прямо над панелью.
+3. Левая нижняя часть (красная зона) — две таблицы, как раньше.
+
+Алгоритм и визуальная логика остались без изменений.
+"""
+
 import sys
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -23,7 +38,6 @@ from PySide6.QtWidgets import (
 from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
-import numpy as np
 from deap_optim import (
     get_results,
     get_assignment_table,
@@ -33,10 +47,14 @@ from deap_optim import (
     _evaluation,
 )
 
+# ---------------------------------------------------------------------------
+#  Optimisation data --------------------------------------------------------
+# ---------------------------------------------------------------------------
+
 populations, pareto_front = get_results()
 assignment_df = get_assignment_table()
 
-# prepare data for additional charts
+# Prepare extra data for histograms ----------------------------------------
 inspector_df, new_df, inwork_df = _get_dataframe()
 NO_CODE = 3700
 
@@ -50,6 +68,7 @@ current_df = current_df.merge(
 current_individ = current_df["Inspector index"].to_list()
 
 no_inspectors, no_df = _filter_by_no(NO_CODE, inspector_df, new_df)
+
 task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors, no_df, current_df)
 
 future_individ = no_df[
@@ -77,23 +96,22 @@ future_load, future_eff = _evaluation(
     results=True,
     current_individ=current_individ,
 )
+
 sorted_future_load = np.sort(future_load)[::-1]
 inspectors_index = list(range(len(current_inspectors)))
 
+# ---------------------------------------------------------------------------
+#  Scatter‑canvas with Pareto front -----------------------------------------
+# ---------------------------------------------------------------------------
 
 class ParetoCanvas(QWidget):
-    """Scatter‑plot с точками популяции и Парето‑фронтом."""
+    """Scatter plot + интерактивный Парето‑фронт."""
 
-    pointSelected = Signal(object)  # → список индексов инспекторов
+    pointSelected = Signal(object)  # → list[int]
 
     def __init__(self, pops, pfront, parent=None):
-        import numpy as np
-
         super().__init__(parent)
-        self.loads, self.effs, self.inds = pops
-        self.loads = np.asarray(self.loads, dtype=float)
-        self.effs = np.asarray(self.effs, dtype=float)
-
+        self.loads, self.effs, self.inds = [np.asarray(a, dtype=float) for a in pops]
         pf_loads, pf_effs, self.pf_inds = pfront
 
         self.fig = Figure(figsize=(5, 4), dpi=100)
@@ -106,6 +124,7 @@ class ParetoCanvas(QWidget):
         lay.addWidget(self.toolbar)
         lay.addWidget(self.canvas)
 
+        # Scatter points ----------------------------------------------------
         self.scatter = self.ax.scatter(
             self.loads,
             self.effs,
@@ -124,6 +143,7 @@ class ParetoCanvas(QWidget):
             label="Pareto Front",
         )
 
+        # Tooltip -----------------------------------------------------------
         self.annot = self.ax.annotate(
             "",
             xy=(0, 0),
@@ -134,16 +154,19 @@ class ParetoCanvas(QWidget):
         )
         self.annot.set_visible(False)
 
+        # Axes formatting ---------------------------------------------------
         self.ax.set_xlabel("Max load, %")
         self.ax.set_ylabel("Efficiency, %")
         self.ax.legend()
         self.fig.tight_layout()
 
+        # mpl events --------------------------------------------------------
         self.canvas.mpl_connect("pick_event", self._on_pick)
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
         self.canvas.mpl_connect("motion_notify_event", self._on_hover)
 
-        
+    # ---------------- Utility helpers -------------------------------------
+
     @staticmethod
     def _build_counts(individual):
         counts = {}
@@ -151,6 +174,7 @@ class ParetoCanvas(QWidget):
             counts[idx] = counts.get(idx, 0) + 1
         return sorted(counts.items(), key=lambda x: x[1], reverse=True)
 
+    # Hover tooltip --------------------------------------------------------
     def _on_hover(self, event):
         vis = self.annot.get_visible()
         if event.inaxes == self.ax:
@@ -168,40 +192,40 @@ class ParetoCanvas(QWidget):
             self.annot.set_visible(False)
             self.canvas.draw_idle()
 
-    # Pick
+    # Pick event -----------------------------------------------------------
     def _on_pick(self, ev):
         idx = ev.ind[0]
         data = self.pf_inds[idx] if ev.artist is self.pf_scatter else self.inds[idx]
         self.pointSelected.emit(data)
 
-    # Scroll zoom
+    # Scroll zoom ----------------------------------------------------------
     def _on_scroll(self, event):
         if event.xdata is None or event.ydata is None:
             return
-
         base_scale = 1.2
         scale = 1 / base_scale if event.button == "up" else base_scale
 
         ax = self.ax
         x_left, x_right = ax.get_xlim()
         y_bottom, y_top = ax.get_ylim()
-
         x_range = (x_right - x_left) * scale
         y_range = (y_top - y_bottom) * scale
-
         relx = (event.xdata - x_left) / (x_right - x_left)
         rely = (event.ydata - y_bottom) / (y_top - y_bottom)
-
         ax.set_xlim(event.xdata - relx * x_range, event.xdata + (1 - relx) * x_range)
         ax.set_ylim(event.ydata - rely * y_range, event.ydata + (1 - rely) * y_range)
         self.canvas.draw_idle()
 
+    # Efficiency slider ----------------------------------------------------
     def filter_eff(self, min_eff):
         mask = self.effs >= min_eff
         self.scatter.set_offsets([[x, y] for x, y, m in zip(self.loads, self.effs, mask) if m])
         self.canvas.draw_idle()
 
 
+# ---------------------------------------------------------------------------
+#  Main window --------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -212,36 +236,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
 
+        # ----------- 1. Scatter (top) --------------------------------------
         self.plot = ParetoCanvas(populations, pareto_front, self)
+        root.addWidget(self.plot, stretch=4)
 
-        self.pred_fig = Figure(figsize=(5, 4), dpi=100)
-        self.pred_ax = self.pred_fig.add_subplot(111)
-        self.pred_canvas = FigureCanvas(self.pred_fig)
-
-        self.pareto_fig = Figure(figsize=(5, 4), dpi=100)
-        self.pareto_ax = self.pareto_fig.add_subplot(111)
-        self.pareto_canvas = FigureCanvas(self.pareto_fig)
-
-        self.stack = QStackedLayout()
-        self.stack.addWidget(self.plot)
-        self.stack.addWidget(self.pred_canvas)
-        self.stack.addWidget(self.pareto_canvas)
-        root.addLayout(self.stack, stretch=4)
-
-        btn_layout = QHBoxLayout()
-        self.btn_group = QButtonGroup(self)
-        names = ["Парето", "Прогноз", "Распределение"]
-        for i, name in enumerate(names):
-            btn = QPushButton(name)
-            btn.setCheckable(True)
-            if i == 0:
-                btn.setChecked(True)
-            btn.clicked.connect(lambda _=False, x=i: self.stack.setCurrentIndex(x))
-            self.btn_group.addButton(btn)
-            btn_layout.addWidget(btn)
-        root.addLayout(btn_layout)
-
-
+        # ----------- 2. Efficiency slider ----------------------------------
         filter_box = QGroupBox("Фильтр эффективности")
         slider = QSlider(Qt.Horizontal)
         slider.setRange(0, 100)
@@ -253,10 +252,11 @@ class MainWindow(QMainWindow):
         flay.addWidget(lbl, alignment=Qt.AlignCenter)
         root.addWidget(filter_box)
 
-
+        # ----------- 3. Bottom area ----------------------------------------
         bottom = QHBoxLayout()
+        root.addLayout(bottom, stretch=3)
 
-
+        # 3‑A. Left pane – tables ------------------------------------------
         left_pane = QVBoxLayout()
 
         self.table = QTableWidget(0, 2)
@@ -271,23 +271,60 @@ class MainWindow(QMainWindow):
 
         bottom.addLayout(left_pane, stretch=3)
 
-
+        # 3‑B. Right pane – stacked histograms -----------------------------
+        # -- create canvases ----------------------------------------------
         self.bar_fig = Figure(figsize=(3, 2), dpi=100)
         self.bar_ax = self.bar_fig.add_subplot(111)
         self.bar_canvas = FigureCanvas(self.bar_fig)
-        bottom.addWidget(self.bar_canvas, stretch=2)
 
-        root.addLayout(bottom, stretch=3)
+        self.pred_fig = Figure(figsize=(3, 2), dpi=100)
+        self.pred_ax = self.pred_fig.add_subplot(111)
+        self.pred_canvas = FigureCanvas(self.pred_fig)
 
- 
+        self.pareto_fig = Figure(figsize=(3, 2), dpi=100)
+        self.pareto_ax = self.pareto_fig.add_subplot(111)
+        self.pareto_canvas = FigureCanvas(self.pareto_fig)
+
+        # -- stacked layout with histograms -------------------------------
+        self.hist_stack = QStackedLayout()
+        self.hist_stack.addWidget(self.bar_canvas)      # 0 – Распределение
+        self.hist_stack.addWidget(self.pred_canvas)     # 1 – Прогноз
+        self.hist_stack.addWidget(self.pareto_canvas)   # 2 – Парето
+
+        hist_container = QWidget()  # wrapper for QStackedLayout
+        hist_container.setLayout(self.hist_stack)
+
+        # -- buttons to switch --------------------------------------------
+        btn_layout = QHBoxLayout()
+        self.btn_group = QButtonGroup(self)
+        buttons = [("Распределение", 0), ("Прогноз", 1), ("Парето", 2)]
+        for text, idx in buttons:
+            btn = QPushButton(text)
+            btn.setCheckable(True)
+            if idx == 0:
+                btn.setChecked(True)
+            btn.clicked.connect(lambda _=False, x=idx: self.hist_stack.setCurrentIndex(x))
+            self.btn_group.addButton(btn)
+            btn_layout.addWidget(btn)
+
+        right_pane = QVBoxLayout()
+        right_pane.addLayout(btn_layout)
+        right_pane.addWidget(hist_container, stretch=1)
+        bottom.addLayout(right_pane, stretch=2)
+
+        # ------------------------------------------------------------------
+        #  Connections & misc ----------------------------------------------
+        # ------------------------------------------------------------------
+
         self.plot.pointSelected.connect(self.show_params)
+        self._draw_future_load()  # initialise second histogram
 
         save_act = self.menuBar().addAction("Save PNG…")
         save_act.triggered.connect(self.save_png)
 
-        self.resize(900, 700)
+        self.resize(1020, 720)
 
-        self._draw_future_load()
+    # ---------------- Slots & helpers -------------------------------------
 
     def show_params(self, ind):
         counts = self.plot._build_counts(ind)
@@ -299,6 +336,8 @@ class MainWindow(QMainWindow):
         self.table.sortItems(1, Qt.DescendingOrder)
         self._draw_load_distribution(ind)
         self._draw_pareto_distribution(ind)
+
+    # ----------- Histogram draw helpers ----------------------------------
 
     def _draw_load_distribution(self, individual):
         counts = self.plot._build_counts(individual)[:10]
@@ -382,6 +421,10 @@ class MainWindow(QMainWindow):
         self.pareto_fig.tight_layout()
         self.pareto_canvas.draw_idle()
 
+    # ---------------------------------------------------------------------
+    #  Utility                                                              
+    # ---------------------------------------------------------------------
+
     def _populate_result_table(self, df):
         self.result_table.setColumnCount(len(df.columns))
         self.result_table.setRowCount(len(df))
@@ -398,6 +441,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Сохранено", f"Изображение сохранено:\n{Path(filename).name}")
 
 
+# ---------------------------------------------------------------------------
+#  Entry‑point --------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
