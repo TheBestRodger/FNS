@@ -4,13 +4,16 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QFileDialog,
     QSlider,
+    QStackedLayout,
     QTableWidget,
     QTableWidgetItem,
     QSizePolicy,
@@ -20,10 +23,62 @@ from PySide6.QtWidgets import (
 from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
-from deap_optim import get_results, get_assignment_table
+import numpy as np
+from deap_optim import (
+    get_results,
+    get_assignment_table,
+    _get_dataframe,
+    _filter_by_no,
+    _start_data_prep,
+    _evaluation,
+)
 
 populations, pareto_front = get_results()
 assignment_df = get_assignment_table()
+
+# prepare data for additional charts
+inspector_df, new_df, inwork_df = _get_dataframe()
+NO_CODE = 3700
+
+current_inspectors, current_df = _filter_by_no(NO_CODE, inspector_df, inwork_df)
+current_df = current_df.merge(
+    current_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
+    how="left",
+    left_on="Инспектор, сменивший статус",
+    right_on="Инспектор, сменивший статус",
+)
+current_individ = current_df["Inspector index"].to_list()
+
+no_inspectors, no_df = _filter_by_no(NO_CODE, inspector_df, new_df)
+task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors, no_df, current_df)
+
+future_individ = no_df[
+    [
+        "Статус РСЗ",
+        "Тип",
+        "Потенциальный ущерб, руб",
+        "ИНН НП",
+        "Инспектор, сменивший статус",
+    ]
+].copy()
+future_individ = future_individ.merge(
+    no_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
+    how="left",
+    left_on="Инспектор, сменивший статус",
+    right_on="Инспектор, сменивший статус",
+)
+future_individ = future_individ["Inspector index"].to_list()
+future_load, future_eff = _evaluation(
+    future_individ,
+    den_TNO,
+    task_cat,
+    task_prob,
+    M,
+    results=True,
+    current_individ=current_individ,
+)
+sorted_future_load = np.sort(future_load)[::-1]
+inspectors_index = list(range(len(current_inspectors)))
 
 
 class ParetoCanvas(QWidget):
@@ -158,7 +213,33 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
 
         self.plot = ParetoCanvas(populations, pareto_front, self)
-        root.addWidget(self.plot, stretch=4)
+
+        self.pred_fig = Figure(figsize=(5, 4), dpi=100)
+        self.pred_ax = self.pred_fig.add_subplot(111)
+        self.pred_canvas = FigureCanvas(self.pred_fig)
+
+        self.pareto_fig = Figure(figsize=(5, 4), dpi=100)
+        self.pareto_ax = self.pareto_fig.add_subplot(111)
+        self.pareto_canvas = FigureCanvas(self.pareto_fig)
+
+        self.stack = QStackedLayout()
+        self.stack.addWidget(self.plot)
+        self.stack.addWidget(self.pred_canvas)
+        self.stack.addWidget(self.pareto_canvas)
+        root.addLayout(self.stack, stretch=4)
+
+        btn_layout = QHBoxLayout()
+        self.btn_group = QButtonGroup(self)
+        names = ["Парето", "Прогноз", "Распределение"]
+        for i, name in enumerate(names):
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            if i == 0:
+                btn.setChecked(True)
+            btn.clicked.connect(lambda _=False, x=i: self.stack.setCurrentIndex(x))
+            self.btn_group.addButton(btn)
+            btn_layout.addWidget(btn)
+        root.addLayout(btn_layout)
 
 
         filter_box = QGroupBox("Фильтр эффективности")
@@ -206,6 +287,8 @@ class MainWindow(QMainWindow):
 
         self.resize(900, 700)
 
+        self._draw_future_load()
+
     def show_params(self, ind):
         counts = self.plot._build_counts(ind)
         top10 = sorted(counts[:10], key=lambda x: x[1], reverse=True)
@@ -215,6 +298,7 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 1, QTableWidgetItem(str(load)))
         self.table.sortItems(1, Qt.DescendingOrder)
         self._draw_load_distribution(ind)
+        self._draw_pareto_distribution(ind)
 
     def _draw_load_distribution(self, individual):
         counts = self.plot._build_counts(individual)[:10]
@@ -231,6 +315,72 @@ class MainWindow(QMainWindow):
         self.bar_ax.set_xticklabels(inspectors, rotation=45)
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
+
+    def _draw_future_load(self):
+        self.pred_ax.clear()
+        self.pred_ax.bar(
+            inspectors_index,
+            sorted_future_load,
+            width=0.8,
+            label="Распределённая нагрузка",
+            color="lightcoral",
+            alpha=0.7,
+        )
+        self.pred_ax.set_xlabel("Инспекторы (отсортированы по итоговой нагрузке)")
+        self.pred_ax.set_ylabel("Текущая взвешенная нагрузка (%)")
+        self.pred_ax.grid(True, alpha=0.3)
+        self.pred_ax.legend()
+        self.pred_ax.set_title(f"Эффективность {round(future_eff, 2)}%")
+        self.pred_fig.tight_layout()
+        self.pred_canvas.draw_idle()
+
+    def _draw_pareto_distribution(self, individual):
+        load, eff = _evaluation(
+            individual,
+            den_TNO,
+            task_cat,
+            task_prob,
+            M,
+            results=True,
+            current_individ=current_individ,
+        )
+        sorted_load = np.sort(load)[::-1]
+        current_mean = load.mean()
+        std = load.std()
+
+        self.pareto_ax.clear()
+        self.pareto_ax.bar(
+            inspectors_index,
+            sorted_future_load,
+            width=0.8,
+            label="Реальная будущая нагрузка",
+            color="lightcoral",
+            alpha=0.7,
+        )
+        self.pareto_ax.bar(
+            inspectors_index,
+            sorted_load,
+            width=0.8,
+            label="Новая распределённая нагрузка",
+            color="lightblue",
+            alpha=0.7,
+        )
+        self.pareto_ax.axhline(y=current_mean, color="red", linestyle="--", alpha=0.7)
+        self.pareto_ax.fill_between(
+            inspectors_index,
+            current_mean - std,
+            current_mean + std,
+            color="orange",
+            alpha=0.2,
+            label=f"±1 σ ({std:.2f} %)",
+        )
+        self.pareto_ax.set_xlabel("Инспекторы (отсортированы по итоговой нагрузке)")
+        self.pareto_ax.set_ylabel("Взвешенная нагрузка (%)")
+        self.pareto_ax.legend()
+        self.pareto_ax.grid(True, alpha=0.3)
+        self.pareto_ax.set_title(f"Эффективность {round(eff, 2)}%")
+        self.pareto_fig.tight_layout()
+        self.pareto_canvas.draw_idle()
 
     def _populate_result_table(self, df):
         self.result_table.setColumnCount(len(df.columns))
