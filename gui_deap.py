@@ -1,17 +1,3 @@
-"""Pareto‑Front GUI (histograms moved to bottom‑right)
-
-Изменения:
-1. **Сверху** остаётся только scatter‑плот со сценарием Парето.
-2. **Справа снизу** расположена панель‑стэк из трёх гистограмм:
-   • «Распределение» (бар‑чарт выбранного решения)
-   • «Прогноз» (будущая нагрузка)
-   • «Парето» (сравнение старой/новой нагрузки)
-   Переключение — кнопками, находящимися прямо над панелью.
-3. Левая нижняя часть (красная зона) — две таблицы, как раньше.
-
-Алгоритм и визуальная логика остались без изменений.
-"""
-
 import sys
 from pathlib import Path
 
@@ -52,16 +38,6 @@ from deap_optim import (
 DATA_DIR = Path("data")
 NO_CODE = 3700
 
-# ---------------------------------------------------------------------------
-#  Data parameters ---------------------------------------------------------
-# ---------------------------------------------------------------------------
-
-# The heavy optimisation data is loaded inside ``MainWindow`` so that it can
-# be reloaded when the user selects another CSV directory.
-
-# ---------------------------------------------------------------------------
-#  Scatter‑canvas with Pareto front -----------------------------------------
-# ---------------------------------------------------------------------------
 
 class ParetoCanvas(QWidget):
     """Scatter plot + интерактивный Парето‑фронт."""
@@ -83,7 +59,7 @@ class ParetoCanvas(QWidget):
         lay.addWidget(self.toolbar)
         lay.addWidget(self.canvas)
 
-        # Scatter points ----------------------------------------------------
+        # Scatter points
         self.scatter = self.ax.scatter(
             self.loads,
             self.effs,
@@ -102,7 +78,7 @@ class ParetoCanvas(QWidget):
             label="Pareto Front",
         )
 
-        # Tooltip -----------------------------------------------------------
+        # Tooltip
         self.annot = self.ax.annotate(
             "",
             xy=(0, 0),
@@ -113,18 +89,18 @@ class ParetoCanvas(QWidget):
         )
         self.annot.set_visible(False)
 
-        # Axes formatting ---------------------------------------------------
+        # Axes formatting
         self.ax.set_xlabel("Max load, %")
         self.ax.set_ylabel("Efficiency, %")
         self.ax.legend()
         self.fig.tight_layout()
 
-        # mpl events --------------------------------------------------------
+        # mpl events
         self.canvas.mpl_connect("pick_event", self._on_pick)
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
         self.canvas.mpl_connect("motion_notify_event", self._on_hover)
 
-    # ---------------- Utility helpers -------------------------------------
+    # Utility helpers
 
     @staticmethod
     def _build_counts(individual):
@@ -133,7 +109,7 @@ class ParetoCanvas(QWidget):
             counts[idx] = counts.get(idx, 0) + 1
         return sorted(counts.items(), key=lambda x: x[1], reverse=True)
 
-    # Hover tooltip --------------------------------------------------------
+    # Hover tooltip
     def _on_hover(self, event):
         vis = self.annot.get_visible()
         if event.inaxes == self.ax:
@@ -151,13 +127,13 @@ class ParetoCanvas(QWidget):
             self.annot.set_visible(False)
             self.canvas.draw_idle()
 
-    # Pick event -----------------------------------------------------------
+    # Pick event
     def _on_pick(self, ev):
         idx = ev.ind[0]
         data = self.pf_inds[idx] if ev.artist is self.pf_scatter else self.inds[idx]
         self.pointSelected.emit(data)
 
-    # Scroll zoom ----------------------------------------------------------
+    # Scroll zoom
     def _on_scroll(self, event):
         if event.xdata is None or event.ydata is None:
             return
@@ -175,16 +151,12 @@ class ParetoCanvas(QWidget):
         ax.set_ylim(event.ydata - rely * y_range, event.ydata + (1 - rely) * y_range)
         self.canvas.draw_idle()
 
-    # Efficiency slider ----------------------------------------------------
+    # Efficiency slider
     def filter_eff(self, min_eff):
         mask = self.effs >= min_eff
         self.scatter.set_offsets([[x, y] for x, y, m in zip(self.loads, self.effs, mask) if m])
         self.canvas.draw_idle()
 
-
-# ---------------------------------------------------------------------------
-#  Main window --------------------------------------------------------------
-# ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
     def _load_data(self, data_dir: Path):
@@ -243,20 +215,25 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Pareto‑Front Viewer")
+        self.setWindowTitle("РСЗ – Анализ Парето‑фронта")
 
-        # Load optimisation data ---------------------------------------
+        # Load optimisation data
         self._load_data(DATA_DIR)
 
         central = QWidget()
         self.setCentralWidget(central)
         self.root_layout = QVBoxLayout(central)
 
-        # ----------- Header with logo and controls ------------------------
+        # Header with logo and controls
+        logo = QLabel()
+        logo_path = Path(__file__).with_name("style").joinpath("logo.png")
+        logo.setPixmap(QPixmap(str(logo_path)).scaledToHeight(40, Qt.SmoothTransformation))
+
         header = QHBoxLayout()
         title_layout = QVBoxLayout()
-        title = QLabel("проект РСЗ")
+        title = QLabel("Проект РСЗ")
         subtitle = QLabel("НОЦ ФНС России и МГТУ им. Н. Э. Баумана")
+        title_layout.addWidget(logo)
         title_layout.addWidget(title)
         title_layout.addWidget(subtitle)
         header.addLayout(title_layout)
@@ -269,22 +246,16 @@ class MainWindow(QMainWindow):
         header.addWidget(self.save_btn)
         header.addWidget(self.load_btn)
 
-        logo = QLabel()
-        logo_path = Path(__file__).with_name("style").joinpath("logo.png")
-        logo.setPixmap(QPixmap(str(logo_path)).scaledToHeight(40, Qt.SmoothTransformation))
-        header.addWidget(logo)
-
+   
         self.root_layout.addLayout(header)
         hline = QFrame()
         hline.setFrameShape(QFrame.HLine)
         hline.setFrameShadow(QFrame.Sunken)
         self.root_layout.addWidget(hline)
 
-        # ----------- 1. Scatter (top) --------------------------------------
         self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
         self.root_layout.addWidget(self.plot, stretch=4)
 
-        # ----------- 2. Efficiency slider ----------------------------------
         filter_box = QGroupBox("Фильтр эффективности")
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, 100)
@@ -297,11 +268,11 @@ class MainWindow(QMainWindow):
         flay.addWidget(lbl, alignment=Qt.AlignCenter)
         self.root_layout.addWidget(filter_box)
 
-        # ----------- 3. Bottom area ----------------------------------------
+
         bottom = QHBoxLayout()
         self.root_layout.addLayout(bottom, stretch=3)
 
-        # 3‑A. Left pane – tables ------------------------------------------
+
         left_pane = QVBoxLayout()
 
         self.table = QTableWidget(0, 2)
@@ -316,8 +287,6 @@ class MainWindow(QMainWindow):
 
         bottom.addLayout(left_pane, stretch=3)
 
-        # 3‑B. Right pane – stacked histograms -----------------------------
-        # -- create canvases ----------------------------------------------
         self.bar_fig = Figure(figsize=(3, 2), dpi=100)
         self.bar_ax = self.bar_fig.add_subplot(111)
         self.bar_canvas = FigureCanvas(self.bar_fig)
@@ -330,19 +299,18 @@ class MainWindow(QMainWindow):
         self.pareto_ax = self.pareto_fig.add_subplot(111)
         self.pareto_canvas = FigureCanvas(self.pareto_fig)
 
-        # -- stacked layout with histograms -------------------------------
+
         self.hist_stack = QStackedLayout()
         self.hist_stack.addWidget(self.bar_canvas)      # 0 – Распределение
         self.hist_stack.addWidget(self.pred_canvas)     # 1 – Прогноз
-        self.hist_stack.addWidget(self.pareto_canvas)   # 2 – Парето
+        self.hist_stack.addWidget(self.pareto_canvas)   # 2 – Нагрузка
 
         hist_container = QWidget()  # wrapper for QStackedLayout
         hist_container.setLayout(self.hist_stack)
 
-        # -- buttons to switch --------------------------------------------
         btn_layout = QHBoxLayout()
         self.btn_group = QButtonGroup(self)
-        buttons = [("Распределение", 0), ("Прогноз", 1), ("Парето", 2)]
+        buttons = [("Распределение", 0), ("Прогноз", 1), ("Нагрузка", 2)]
         for text, idx in buttons:
             btn = QPushButton(text)
             btn.setCheckable(True)
@@ -357,17 +325,11 @@ class MainWindow(QMainWindow):
         right_pane.addWidget(hist_container, stretch=1)
         bottom.addLayout(right_pane, stretch=2)
 
-        # ------------------------------------------------------------------
-        #  Connections & misc ----------------------------------------------
-        # ------------------------------------------------------------------
-
         self.plot.pointSelected.connect(self.show_params)
         self._draw_future_load()  # initialise second histogram
 
 
         self.resize(1020, 720)
-
-    # ---------------- Slots & helpers -------------------------------------
 
     def show_params(self, ind):
         ind = list(ind)
@@ -396,8 +358,6 @@ class MainWindow(QMainWindow):
         self.plot.filter_eff(value)
         self.slider_label.setText(f"≥ {value} %")
 
-    # ----------- Histogram draw helpers ----------------------------------
-
     def _draw_load_distribution(self, individual):
         counts = self.plot._build_counts(individual)[:10]
         inspectors = [emp for emp, _ in counts]
@@ -405,7 +365,7 @@ class MainWindow(QMainWindow):
         positions = range(len(inspectors))
 
         self.bar_ax.clear()
-        self.bar_ax.bar(positions, tasks, color="#003366")
+        self.bar_ax.bar(positions, tasks, color="#77B7F7")
         self.bar_ax.set_title("Нагрузка (кол-во задач)")
         self.bar_ax.set_xlabel("Inspector idx")
         self.bar_ax.set_ylabel("Tasks")
@@ -429,7 +389,7 @@ class MainWindow(QMainWindow):
             loads,
             width=0.8,
             label="Распределённая нагрузка",
-            color="#003366",
+            color="#5FA7F0",
             alpha=0.7,
         )
         self.pred_ax.set_xlabel("Инспекторы (отсортированы по итоговой нагрузке)")
@@ -454,7 +414,7 @@ class MainWindow(QMainWindow):
             self.sorted_future_load,
             width=0.8,
             label="Реальная будущая нагрузка",
-            color="#003366",
+            color="#FB4F00",
             alpha=0.7,
         )
         self.pareto_ax.bar(
@@ -470,7 +430,7 @@ class MainWindow(QMainWindow):
             self.inspectors_index,
             current_mean - std,
             current_mean + std,
-            color="#4da6ff",
+            color="#4dff7f",
             alpha=0.2,
             label=f"±1 σ ({std:.2f} %)",
         )
@@ -481,10 +441,6 @@ class MainWindow(QMainWindow):
         self.pareto_ax.set_title(f"Эффективность {round(eff, 2)}%")
         self.pareto_fig.tight_layout()
         self.pareto_canvas.draw_idle()
-
-    # ---------------------------------------------------------------------
-    #  Utility                                                              
-    # ---------------------------------------------------------------------
 
     def _populate_result_table(self, df):
         self.result_table.setColumnCount(len(df.columns))
@@ -520,15 +476,11 @@ class MainWindow(QMainWindow):
             self._draw_future_load()
 
 
-# ---------------------------------------------------------------------------
-#  Entry‑point --------------------------------------------------------------
-# ---------------------------------------------------------------------------
-
+# QWidget { background-color: #001f3f; color: #e0f0ff; }
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyleSheet(
         """
-        QWidget { background-color: #001f3f; color: #e0f0ff; }
         QPushButton { background-color: #003366; color: white; padding: 4px 8px; border: none; border-radius: 4px; }
         QPushButton:hover { background-color: #004c8c; }
         QGroupBox { border: 1px solid #004c8c; margin-top: 6px; }
