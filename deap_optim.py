@@ -124,9 +124,9 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
     return hall_of_fame, uniq_pareto
 
 def _get_dataframe():
-    inspectors_df = pd.read_csv("data/inspectors_df.csv", sep=';')
-    new_df = pd.read_csv("data/new_tasks_df.csv", sep=';')
-    inwork_df = pd.read_csv("data/inwork_tasks_df.csv", sep=';')
+    inspectors_df = pd.read_csv("data/inspectors_df.csv")
+    new_df = pd.read_csv("data/new_tasks_df.csv")
+    inwork_df = pd.read_csv("data/inwork_tasks_df.csv")
     return inspectors_df, new_df, inwork_df
 
 def _run_evolution(csv_path: Path) -> Tuple[Tuple, Tuple]:
