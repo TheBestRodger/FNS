@@ -81,7 +81,7 @@ class AntColonyOptimizer:
         self.evaporation = evaporation
         self.pheromones = [np.ones(r[1] - r[0] + 1) for r in param_ranges]
         self.solutions: List[Solution] = []
-        self.track   = track      # следить за обучением?
+        self.track   = track      # следить за обучением
         self.verbose = verbose
         self.history = []         # сюда пишем статистику по поколениям
 
@@ -128,7 +128,7 @@ class AntColonyOptimizer:
                     "avg_load":   sum(loads)/len(loads),
                     "avg_eff":    sum(effs)/len(effs),
                 })
-            if self.verbose and gen % 5 == 0:  # печатать каждые 5 поколений
+            if self.verbose and gen % 5 == 0:  # печатать именно каждые 5 поколений
                 h = self.history[-1]
                 print(f"Gen {gen:3d}: Pareto {h['pareto_size']:3d}  "
                       f"best_load={h['best_load']:.3f} best_eff={h['best_eff']:.3f}")
@@ -141,19 +141,19 @@ class AntColonyOptimizer:
 
 def _load_data(no_code: int = 3700):
     inspectors_df, new_df, _ = _prepare_dataframe(
-        "data/Automated_RSZ_distribution_enc.csv"
+        "data/Automated_RSZ_distribution_enc.csv" # CSV ПУТЬ ФАЙЛА
     )
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
     task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df)
     return task_prob, N, M, task_cat, den_TNO
 
-
+# здесь бэкенд для ГУИ
 def _run_evolution() -> Tuple[Tuple, Tuple]:
     task_prob, N, M, task_cat, den_TNO = _load_data()
     if N == 0 or M == 0:
         empty = ([], [], tuple())
         return empty, empty
-
+    # Обертка над файлом _evaluation из файла deap_optim
     def evaluate(params: List[int]) -> Tuple[float, float]:
         load, eff = _evaluation(params, den_TNO, task_cat, task_prob, M)
         return float(load), float(eff)
@@ -192,7 +192,7 @@ def get_results(*, recompute: bool = False) -> Tuple[Tuple, Tuple]:
         except Exception:
             pass
 
-    populations, pareto_front = _run_evolution()
+    populations, pareto_front = _run_evolution() # здесь бэкенд для ГУИ
 
     try:
         with _CACHE_FILE.open("wb") as fh:
@@ -202,25 +202,25 @@ def get_results(*, recompute: bool = False) -> Tuple[Tuple, Tuple]:
 
     return populations, pareto_front
 
-
+# тут для примерки работы алгоритма и всякой всячины для теста, если запускать этот файл
 def main() -> None:
     task_prob, N, M, task_cat, den_TNO = _load_data()
     if N == 0 or M == 0:
         print("No data for optimization")
         return
-
+    # Обертка над файлом _evaluation из файла deap_optim
     def evaluate(params: List[int]) -> Tuple[float, float]:
         load, eff = _evaluation(params, den_TNO, task_cat, task_prob, M)
         return float(load), float(eff)
 
     param_ranges = [(0, M - 1)] * N
     optimizer = AntColonyOptimizer(
-        func=evaluate,
+        func=evaluate, 
         param_ranges=param_ranges,
         n_ants=30,
         n_iter=40,
         track=True,      
-        verbose=True     # печатать каждые 5 поколений
+        verbose=True     # ДА - печатать каждые 5 поколений
     )
     result = optimizer.run()
     import matplotlib.pyplot as plt

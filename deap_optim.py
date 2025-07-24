@@ -157,7 +157,7 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
 
     func = partial(_evaluation, den_TNO=den_TNO, task_cat=task_cat, task_prob=task_prob, M=M)
 
-    creator.create('FintesMulti', base.Fitness, weights=(-1, 1)) # load ↓, efficiency ↑
+    creator.create('FintesMulti', base.Fitness, weights=(-1, 1))
     creator.create('Individual', list, fitness=creator.FintesMulti)
     
     toolbox = base.Toolbox()
@@ -231,7 +231,7 @@ def get_results(*, data_path: str | Path | None = None, recompute: bool = False)
             with _CACHE_FILE.open('rb') as fh:
                 return pickle.load(fh)
         except Exception:
-            pass  # повреждённый кеш → пересчитаем
+            pass  # повреждённый кеш
 
     populations, pareto_front = _run_evolution(csv_path)
 
