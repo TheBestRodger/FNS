@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pickle
 from pathlib import Path
 from typing import Tuple, Sequence
 from functools import partial
@@ -11,7 +10,6 @@ from deap import base, creator, tools, algorithms
 import random
 
 
-_CACHE_FILE = Path(__file__).with_suffix(".pkl")
 # _DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
 # get_results И get_assignment_table используют статичный путь к CSV
 
@@ -165,37 +163,19 @@ def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_dir: str | Path = "data", recompute: bool = False):
+def get_results(*, data_dir: str | Path = "data"):
+    """Compute optimisation results using data from ``data_dir``."""
 
-    if not recompute and _CACHE_FILE.exists():
-        try:
-            with _CACHE_FILE.open('rb') as fh:
-                return pickle.load(fh)
-        except Exception:
-            pass  # повреждённый кеш → пересчитаем
-
-    populations, pareto_front = _run_evolution(data_dir)
-
-    # save cache
-    try:
-        with _CACHE_FILE.open('wb') as fh:
-            pickle.dump((populations, pareto_front), fh)
-    except OSError:
-        pass
-
-    return populations, pareto_front
+    return _run_evolution(data_dir)
 
 # получаем таблицу назначений задач инспекторам
 # (используется в GUI)
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
-                         data_dir: str | Path = "data",
-                         recompute: bool = False) -> pd.DataFrame:
+                         data_dir: str | Path = "data") -> pd.DataFrame:
 
-    populations, pareto_front = get_results(
-        data_dir=data_dir, recompute=recompute
-    )
+    populations, pareto_front = get_results(data_dir=data_dir)
 
     inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
@@ -222,7 +202,7 @@ def get_assignment_table(*,
     return result_df
 # Тесты, чтоб проверить отдельные функции без GUI
 if __name__ == "__main__":
-    pop, pf = get_results(recompute=True)
+    pop, pf = get_results()
     print(
         f"Populations: {len(pop[0])} individuals → first 5:"
         f" {list(zip(pop[0], pop[1]))[:5]}"
