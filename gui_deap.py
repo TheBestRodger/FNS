@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -186,16 +187,40 @@ class ParetoCanvas(QWidget):
 
 class MainWindow(QMainWindow):
     def _load_data(self, data_dir: Path):
-        """Load optimisation and helper datasets from ``data_dir``."""
+        """Load optimisation and helper datasets from ``data_dir``.
+
+        If the required CSV files do not exist, all data attributes are cleared
+        so that the graphs appear empty.
+        """
 
         self.data_dir = Path(data_dir)
+
+        try:
+            inspector_df, new_df, inwork_df = _get_dataframe(self.data_dir)
+        except FileNotFoundError:
+            # CSVs missing → show empty graphs
+            self.populations = ([], [], tuple())
+            self.pareto_front = ([], [], tuple())
+            self.assignment_df = pd.DataFrame()
+            self.current_inspectors = pd.DataFrame()
+            self.current_individ = []
+            self.future_individ = []
+            self.future_eff = None
+            self.sorted_future_load = np.array([])
+            self.future_counts = np.array([])
+            self.sorted_future_counts = np.array([])
+            self.inspectors_index = []
+            self.task_prob = np.array([])
+            self.N = self.M = 0
+            self.task_cat = np.array([])
+            self.den_TNO = {}
+            return
 
         # Optimisation results
         self.populations, self.pareto_front = get_results(data_dir=self.data_dir)
         self.assignment_df = get_assignment_table(data_dir=self.data_dir)
 
         # Additional data for histograms
-        inspector_df, new_df, inwork_df = _get_dataframe(self.data_dir)
 
         self.current_inspectors, current_df = _filter_by_no(NO_CODE, inspector_df, inwork_df)
         current_df = current_df.merge(
