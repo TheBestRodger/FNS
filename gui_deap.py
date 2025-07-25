@@ -3,7 +3,6 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -20,7 +19,6 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QSizePolicy,
     QVBoxLayout,
-    QFrame,
     QWidget,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
@@ -64,7 +62,7 @@ class ParetoCanvas(QWidget):
             self.loads,
             self.effs,
             s=30,
-            c="#4da6ff",
+            c="skyblue",
             alpha=0.65,
             picker=True,
             label="All",
@@ -199,9 +197,10 @@ class MainWindow(QMainWindow):
             left_on="Инспектор, сменивший статус",
             right_on="Инспектор, сменивший статус",
         )
-        future_individ = future_individ["Inspector index"].to_list()
+        self.future_individ = future_individ["Inspector index"].to_list()
+
         future_load, self.future_eff = _evaluation(
-            future_individ,
+            self.future_individ,
             self.den_TNO,
             self.task_cat,
             self.task_prob,
@@ -211,6 +210,8 @@ class MainWindow(QMainWindow):
         )
 
         self.sorted_future_load = np.sort(future_load)[::-1]
+        self.future_counts = self._task_counts(self.future_individ)
+        self.sorted_future_counts = np.sort(self.future_counts)[::-1]
         self.inspectors_index = list(range(len(self.current_inspectors)))
 
     def __init__(self):
@@ -328,6 +329,11 @@ class MainWindow(QMainWindow):
         self.plot.pointSelected.connect(self.show_params)
         self._draw_future_load()  # initialise second histogram
 
+        save_act = self.menuBar().addAction("Save PNG…")
+        save_act.triggered.connect(self.save_png)
+
+        load_act = self.menuBar().addAction("Load CSVs…")
+        load_act.triggered.connect(self.choose_csv_dir)
 
         self.resize(1020, 720)
 
@@ -350,7 +356,8 @@ class MainWindow(QMainWindow):
             results=True,
             current_individ=self.current_individ,
         )
-        self._draw_future_load(loads, eff)
+        task_counts = self._task_counts(ind)
+        self._draw_future_load(task_counts, eff)
         self._draw_pareto_distribution(loads, eff)
 
     def _on_slider(self, value):
@@ -374,11 +381,18 @@ class MainWindow(QMainWindow):
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
 
+    def _task_counts(self, individual):
+        """Return task counts per inspector for a given individual."""
+        counts = np.zeros(self.M, dtype=int)
+        for idx in individual:
+            counts[idx] += 1
+        return counts
+
     def _draw_future_load(self, loads=None, eff=None):
-        """Draw forecasted load distribution."""
+        """Draw forecasted load distribution (task counts)."""
 
         if loads is None:
-            loads = self.sorted_future_load
+            loads = self.sorted_future_counts
             eff = self.future_eff
         else:
             loads = np.sort(loads)[::-1]
@@ -392,8 +406,8 @@ class MainWindow(QMainWindow):
             color="#5FA7F0",
             alpha=0.7,
         )
-        self.pred_ax.set_xlabel("Инспекторы (отсортированы по итоговой нагрузке)")
-        self.pred_ax.set_ylabel("Текущая взвешенная нагрузка (%)")
+        self.pred_ax.set_xlabel("Инспекторы (отсортированы по числу задач)")
+        self.pred_ax.set_ylabel("Количество задач")
         self.pred_ax.grid(True, alpha=0.3)
         self.pred_ax.legend()
         if eff is not None:
@@ -422,7 +436,7 @@ class MainWindow(QMainWindow):
             sorted_load,
             width=0.8,
             label="Новая распределённая нагрузка",
-            color="#4da6ff",
+            color="lightblue",
             alpha=0.7,
         )
         self.pareto_ax.axhline(y=current_mean, color="red", linestyle="--", alpha=0.7)
