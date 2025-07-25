@@ -30,10 +30,8 @@ def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame, in_work: pd.
     task_prob = [inspectors_df['p_SCHEMA'].to_list(), inspectors_df['p_RISK_LONG'].to_list(), inspectors_df['p_RISK_SHORT'].to_list(), inspectors_df['p_TASK'].to_list(),]
     task_prob = np.array([*zip(*task_prob)])
     
-    # Определения числа распределяемых задач и числа сотрудников --> int, int
     N, M = df.__len__(), inspectors_df.__len__()
-    
-    # Создание массива хранящего в себе тип задачи по порядку --> np.array(число распределяемых задач)
+
     if in_work is not None:
         concate_df = pd.concat([df, in_work])
     else:
@@ -121,7 +119,7 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
     print("Len of Pareto set:", len(uniq_pareto))
     return hall_of_fame, uniq_pareto
 
-def _get_dataframe(data_dir: str | Path = "data"):
+def _get_dataframe(data_dir: str | Path = ""):
     """Load required CSV files from ``data_dir``.
 
     Parameters
@@ -163,7 +161,7 @@ def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_dir: str | Path = "data"):
+def get_results(*, data_dir: str | Path = ""):
     """Compute optimisation results using data from ``data_dir``."""
 
     return _run_evolution(data_dir)
@@ -173,7 +171,7 @@ def get_results(*, data_dir: str | Path = "data"):
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
-                         data_dir: str | Path = "data") -> pd.DataFrame:
+                         data_dir: str | Path = "") -> pd.DataFrame:
 
     populations, pareto_front = get_results(data_dir=data_dir)
 

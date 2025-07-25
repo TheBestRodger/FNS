@@ -36,7 +36,7 @@ from deap_optim import (
     _evaluation,
 )
 
-DATA_DIR = Path("data")
+DATA_DIR = Path("")
 NO_CODE = 3700
 
 
@@ -117,7 +117,7 @@ class ParetoCanvas(QWidget):
             cont, ind = self.pf_scatter.contains(event)
             if cont:
                 idx = ind["ind"][0]
-                items = self._build_counts(self.pf_inds[idx])[:10]
+                items = self._build_counts(self.pf_inds[idx])[:100]
                 text = "\n".join(f"Сотрудник {emp}: {load} задач" for emp, load in items)
                 self.annot.xy = self.pf_scatter.get_offsets()[idx]
                 self.annot.set_text(text)
@@ -367,7 +367,7 @@ class MainWindow(QMainWindow):
     def show_params(self, ind):
         ind = list(ind)
         counts = self.plot._build_counts(ind)
-        top10 = sorted(counts[:10], key=lambda x: x[1], reverse=True)
+        top10 = sorted(counts[:100], key=lambda x: x[1], reverse=True)
         self.table.setRowCount(len(top10))
         for i, (emp, load) in enumerate(top10):
             self.table.setItem(i, 0, QTableWidgetItem(f"Сотрудник {emp}"))
@@ -391,13 +391,17 @@ class MainWindow(QMainWindow):
         """Handle efficiency slider."""
         self.plot.filter_eff(value)
         self.slider_label.setText(f"≥ {value} %")
-
     def _draw_load_distribution(self, individual):
-        counts = self.plot._build_counts(individual)[:10]
+        counts = self.plot._build_counts(individual)
         inspectors = [emp for emp, _ in counts]
-        tasks = [load for _, load in counts]
+        tasks      = [load for _, load in counts]
         positions = range(len(inspectors))
+        full_ind = individual + self.current_individ        # ← ключевое
+        counts = self._task_counts(full_ind)                # ndarray длиной M
+        inspectors = self.inspectors_index                  # 0..M‑1
 
+        self.bar_ax.clear()
+        self.bar_ax.bar(inspectors, counts, color="#77B7F7")
         self.bar_ax.clear()
         self.bar_ax.bar(positions, tasks, color="#77B7F7")
         self.bar_ax.set_title("Нагрузка (кол-во задач)")
@@ -407,6 +411,26 @@ class MainWindow(QMainWindow):
         self.bar_ax.set_xticklabels(inspectors, rotation=45)
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
+    # def _draw_load_distribution(self, individual):
+    #     counts = self.plot._build_counts(individual)
+    #     inspectors = [emp for emp, _ in counts]
+    #     tasks      = [load for _, load in counts]
+    #     positions = range(len(inspectors))
+    #     full_ind = individual + self.current_individ        # ← ключевое
+    #     counts = self._task_counts(full_ind)                # ndarray длиной M
+    #     inspectors = self.inspectors_index                  # 0..M‑1
+
+    #     self.bar_ax.clear()
+    #     self.bar_ax.bar(inspectors, counts, color="#77B7F7")
+    #     self.bar_ax.clear()
+    #     self.bar_ax.bar(positions, tasks, color="#77B7F7")
+    #     self.bar_ax.set_title("Нагрузка (кол-во задач)")
+    #     self.bar_ax.set_xlabel("Inspector idx")
+    #     self.bar_ax.set_ylabel("Tasks")
+    #     self.bar_ax.set_xticks(positions)
+    #     self.bar_ax.set_xticklabels(inspectors, rotation=45)
+    #     self.bar_fig.tight_layout()
+    #     self.bar_canvas.draw_idle()
 
     def _task_counts(self, individual):
         """Return task counts per inspector for a given individual."""
@@ -499,22 +523,23 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Сохранено", f"Изображение сохранено:\n{Path(filename).name}")
 
     def choose_csv_dir(self):
-        """Select new directory with CSV files and reload data."""
         new_dir = QFileDialog.getExistingDirectory(self, "Выбрать папку с CSV", str(self.data_dir))
-        if new_dir:
-            # reload data and refresh UI
-            self._load_data(Path(new_dir))
+        if not new_dir:
+            return
 
-            # rebuild scatter plot
-            self.root_layout.removeWidget(self.plot)
-            self.plot.deleteLater()
-            self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
-            self.root_layout.insertWidget(0, self.plot, stretch=4)
-            self.plot.pointSelected.connect(self.show_params)
+        self._load_data(Path(new_dir))
 
-            # update tables and histograms
-            self._populate_result_table(self.assignment_df)
-            self._draw_future_load()
+        old_index = self.root_layout.indexOf(self.plot)
+
+        self.root_layout.removeWidget(self.plot)
+        self.plot.deleteLater()
+
+        self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
+        self.root_layout.insertWidget(old_index, self.plot, stretch=4)
+        self.plot.pointSelected.connect(self.show_params)
+
+        self._populate_result_table(self.assignment_df)
+        self._draw_future_load()
 
 
 # QWidget { background-color: #001f3f; color: #e0f0ff; }
