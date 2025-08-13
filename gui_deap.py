@@ -259,7 +259,10 @@ class MainWindow(QMainWindow):
         logo_path = Path(__file__).with_name("style").joinpath("logo.png")
         logo.setPixmap(QPixmap(str(logo_path)).scaledToHeight(60, Qt.SmoothTransformation))
 
-        header = QHBoxLayout()
+        # Create coloured header widget
+        header_widget = QWidget()
+        header_widget.setStyleSheet("background-color: #3DBBED;")
+        header = QHBoxLayout(header_widget)
         title_layout = QVBoxLayout()
         #title = QLabel("Проект РСЗ")
         subtitle = QLabel("НОЦ ФНС России и МГТУ им. Н. Э. Баумана")
@@ -276,8 +279,8 @@ class MainWindow(QMainWindow):
         header.addWidget(self.save_btn)
         header.addWidget(self.load_btn)
 
-   
-        self.root_layout.addLayout(header)
+
+        self.root_layout.addWidget(header_widget)
         hline = QFrame()
         hline.setFrameShape(QFrame.HLine)
         hline.setFrameShadow(QFrame.Sunken)
