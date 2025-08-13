@@ -161,8 +161,7 @@ def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_dir: str | Path = ""):
-    """Compute optimisation results using data from ``data_dir``."""
+def get_results(*, data_dir: str | Path = "", recompute: bool = False):
 
     return _run_evolution(data_dir)
 
@@ -171,9 +170,11 @@ def get_results(*, data_dir: str | Path = ""):
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
-                         data_dir: str | Path = "") -> pd.DataFrame:
 
-    populations, pareto_front = get_results(data_dir=data_dir)
+                         data_dir: str | Path = "",
+                         recompute: bool = False) -> pd.DataFrame:
+
+    ppopulations, pareto_front = get_results(data_dir=data_dir)
 
     inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)

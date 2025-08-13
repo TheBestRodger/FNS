@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap
 from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT
 from matplotlib.figure import Figure
+import pandas as pd
 
 from deap_optim import (
     get_results,
@@ -189,6 +190,7 @@ class MainWindow(QMainWindow):
             self.task_cat = np.array([])
             self.den_TNO = {}
             return
+        self.data_dir = Path(data_dir)
 
         # Optimisation results
         self.populations, self.pareto_front = get_results(data_dir=self.data_dir)
@@ -243,7 +245,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("РСЗ – Анализ Парето‑фронта")
+        self.setWindowTitle("Анализ Парето‑фронта")
 
         # Load optimisation data
         self._load_data(DATA_DIR)
@@ -255,14 +257,14 @@ class MainWindow(QMainWindow):
         # Header with logo and controls
         logo = QLabel()
         logo_path = Path(__file__).with_name("style").joinpath("logo.png")
-        logo.setPixmap(QPixmap(str(logo_path)).scaledToHeight(40, Qt.SmoothTransformation))
+        logo.setPixmap(QPixmap(str(logo_path)).scaledToHeight(60, Qt.SmoothTransformation))
 
         header = QHBoxLayout()
         title_layout = QVBoxLayout()
-        title = QLabel("Проект РСЗ")
+        #title = QLabel("Проект РСЗ")
         subtitle = QLabel("НОЦ ФНС России и МГТУ им. Н. Э. Баумана")
         title_layout.addWidget(logo)
-        title_layout.addWidget(title)
+        #title_layout.addWidget(title)
         title_layout.addWidget(subtitle)
         header.addLayout(title_layout)
         header.addStretch(1)
@@ -363,17 +365,32 @@ class MainWindow(QMainWindow):
         load_act.triggered.connect(self.choose_csv_dir)
 
         self.resize(1020, 720)
+    def _task_counts(self, individual):
+        """Вернуть ndarray длиной M с числом задач для каждого инспектора."""
+        counts = np.zeros(self.M, dtype=int)
+        for idx in individual:
+            # гарантируем: целое число и в диапазоне
+            if isinstance(idx, (int, np.integer)) and 0 <= idx < self.M:
+                counts[idx] += 1
+        return counts
 
     def show_params(self, ind):
-        ind = list(ind)
-        counts = self.plot._build_counts(ind)
-        top10 = sorted(counts[:100], key=lambda x: x[1], reverse=True)
-        self.table.setRowCount(len(top10))
-        for i, (emp, load) in enumerate(top10):
-            self.table.setItem(i, 0, QTableWidgetItem(f"Сотрудник {emp}"))
-            self.table.setItem(i, 1, QTableWidgetItem(str(load)))
-        self.table.sortItems(1, Qt.DescendingOrder)
-        self._draw_load_distribution(ind)
+        ind = list(ind)                      # ← теперь это Python‑list
+        full_ind = ind + self.current_individ 
+
+        # агрегируем: сколько задач у каждого инспектора
+        counts = self._task_counts(full_ind)          # ndarray длиной M
+        order  = np.argsort(counts)[::-1]             # индексы от max → min
+
+
+        top10_idx = order
+        self.table.setRowCount(10)
+        for row, idx in enumerate(top10_idx):
+            self.table.setItem(row, 0, QTableWidgetItem(f"Сотрудник {idx}"))
+            self.table.setItem(row, 1, QTableWidgetItem(str(counts[idx])))
+
+        self._draw_load_distribution(counts, order)
+
         loads, eff = _evaluation(
             ind,
             self.den_TNO,
@@ -387,28 +404,40 @@ class MainWindow(QMainWindow):
         self._draw_future_load(task_counts, eff)
         self._draw_pareto_distribution(loads, eff)
 
+
     def _on_slider(self, value):
         """Handle efficiency slider."""
         self.plot.filter_eff(value)
         self.slider_label.setText(f"≥ {value} %")
-    def _draw_load_distribution(self, individual):
-        counts = self.plot._build_counts(individual)
-        inspectors = [emp for emp, _ in counts]
-        tasks      = [load for _, load in counts]
-        positions = range(len(inspectors))
-        full_ind = individual + self.current_individ        # ← ключевое
-        counts = self._task_counts(full_ind)                # ndarray длиной M
-        inspectors = self.inspectors_index                  # 0..M‑1
 
+    def _draw_load_distribution(self, counts, order):
+        """
+        counts – ndarray длиной M
+        order  – индексы инспекторов, отсортированные по нагрузке (для таблицы)
+        """
+        tasks_sorted = counts[order]
         self.bar_ax.clear()
-        self.bar_ax.bar(inspectors, counts, color="#77B7F7")
-        self.bar_ax.clear()
-        self.bar_ax.bar(positions, tasks, color="#77B7F7")
-        self.bar_ax.set_title("Нагрузка (кол-во задач)")
-        self.bar_ax.set_xlabel("Inspector idx")
-        self.bar_ax.set_ylabel("Tasks")
-        self.bar_ax.set_xticks(positions)
-        self.bar_ax.set_xticklabels(inspectors, rotation=45)
+
+        # бины «по целым»: -0.5, 0.5, 1.5 … n+0.5
+        max_tasks = tasks_sorted.max()
+        bin_edges = np.arange(max_tasks + 2) - 0.5          # +2, чтобы включить max
+
+        _, edges, _ = self.bar_ax.hist(
+            tasks_sorted,
+            bins=bin_edges,
+            color="#77B7F7",
+            edgecolor="white",
+        )
+
+        # центры бинов для тиков
+        centers = (edges[:-1] + edges[1:]) / 2
+        self.bar_ax.set_xticks(centers)
+        self.bar_ax.set_xticklabels([str(i) for i in range(max_tasks + 1)])
+
+        self.bar_ax.set_title("Распределение нагрузки (кол-во задач)")
+        self.bar_ax.set_xlabel("Задач у инспектора")
+        self.bar_ax.set_ylabel("Число инспекторов")
+
         self.bar_fig.tight_layout()
         self.bar_canvas.draw_idle()
     # def _draw_load_distribution(self, individual):
@@ -438,6 +467,7 @@ class MainWindow(QMainWindow):
         for idx in individual:
             counts[idx] += 1
         return counts
+
 
     def _draw_future_load(self, loads=None, eff=None):
         """Draw forecasted load distribution (task counts)."""
