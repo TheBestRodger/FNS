@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pickle
 from pathlib import Path
 from typing import Tuple, Sequence
 from functools import partial
@@ -11,7 +10,6 @@ from deap import base, creator, tools, algorithms
 import random
 
 
-_CACHE_FILE = Path(__file__).with_suffix(".pkl")
 # _DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
 # get_results И get_assignment_table используют статичный путь к CSV
 
@@ -32,10 +30,8 @@ def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame, in_work: pd.
     task_prob = [inspectors_df['p_SCHEMA'].to_list(), inspectors_df['p_RISK_LONG'].to_list(), inspectors_df['p_RISK_SHORT'].to_list(), inspectors_df['p_TASK'].to_list(),]
     task_prob = np.array([*zip(*task_prob)])
     
-    # Определения числа распределяемых задач и числа сотрудников --> int, int
     N, M = df.__len__(), inspectors_df.__len__()
-    
-    # Создание массива хранящего в себе тип задачи по порядку --> np.array(число распределяемых задач)
+
     if in_work is not None:
         concate_df = pd.concat([df, in_work])
     else:
@@ -174,6 +170,7 @@ def get_results(*, data_dir: str | Path = "", recompute: bool = False):
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
+
                          data_dir: str | Path = "",
                          recompute: bool = False) -> pd.DataFrame:
 
@@ -204,7 +201,7 @@ def get_assignment_table(*,
     return result_df
 # Тесты, чтоб проверить отдельные функции без GUI
 if __name__ == "__main__":
-    pop, pf = get_results(recompute=True)
+    pop, pf = get_results()
     print(
         f"Populations: {len(pop[0])} individuals → first 5:"
         f" {list(zip(pop[0], pop[1]))[:5]}"
