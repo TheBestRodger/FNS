@@ -123,7 +123,7 @@ def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
     print("Len of Pareto set:", len(uniq_pareto))
     return hall_of_fame, uniq_pareto
 
-def _get_dataframe(data_dir: str | Path = "data"):
+def _get_dataframe(data_dir: str | Path = ""):
     """Load required CSV files from ``data_dir``.
 
     Parameters
@@ -165,37 +165,19 @@ def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_dir: str | Path = "data", recompute: bool = False):
+def get_results(*, data_dir: str | Path = "", recompute: bool = False):
 
-    if not recompute and _CACHE_FILE.exists():
-        try:
-            with _CACHE_FILE.open('rb') as fh:
-                return pickle.load(fh)
-        except Exception:
-            pass  # повреждённый кеш → пересчитаем
-
-    populations, pareto_front = _run_evolution(data_dir)
-
-    # save cache
-    try:
-        with _CACHE_FILE.open('wb') as fh:
-            pickle.dump((populations, pareto_front), fh)
-    except OSError:
-        pass
-
-    return populations, pareto_front
+    return _run_evolution(data_dir)
 
 # получаем таблицу назначений задач инспекторам
 # (используется в GUI)
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
-                         data_dir: str | Path = "data",
+                         data_dir: str | Path = "",
                          recompute: bool = False) -> pd.DataFrame:
 
-    populations, pareto_front = get_results(
-        data_dir=data_dir, recompute=recompute
-    )
+    ppopulations, pareto_front = get_results(data_dir=data_dir)
 
     inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
