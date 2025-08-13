@@ -272,13 +272,6 @@ class MainWindow(QMainWindow):
         header.addLayout(title_layout)
         header.addStretch(1)
 
-        self.save_btn = QPushButton("Save PNG…")
-        self.save_btn.clicked.connect(self.save_png)
-        self.load_btn = QPushButton("Load CSVs…")
-        self.load_btn.clicked.connect(self.choose_csv_dir)
-        header.addWidget(self.save_btn)
-        header.addWidget(self.load_btn)
-
 
         self.root_layout.addWidget(header_widget)
         hline = QFrame()
