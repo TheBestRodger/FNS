@@ -1,0 +1,40 @@
+name: build-windows-exe
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install -U pip wheel
+          pip install PyInstaller PySide6 matplotlib numpy pandas
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
+
+      - name: Build (PyInstaller)
+        run: |
+          pyinstaller --noconfirm --clean `
+            --name ParetoAnalyzer `
+            --windowed `
+            --collect-all PySide6 `
+            --collect-all matplotlib `
+            --collect-submodules matplotlib.backends `
+            --add-data "app/style;style" `
+            app/main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ParetoAnalyzer-win
+          path: dist/ParetoAnalyzer/

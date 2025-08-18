@@ -1,3 +1,4 @@
+from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore     import QSize, QRectF
@@ -7,14 +8,20 @@ from PySide6.QtWidgets  import (
     QSizePolicy,
     QWidget,
 )
+import sys
+
+def resource_path(*parts: str) -> Path:
+    base = getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)  # ../app
+    return Path(base).joinpath(*parts)
 
 class SvgLogo(QWidget):
     def __init__(self, svg_path: Path, preferred_height: int = 40, keep_aspect: bool = True, parent=None):
         super().__init__(parent)
+        
         self.renderer = QSvgRenderer(str(svg_path))
         self._pref_h = preferred_height
         self.keep_aspect = keep_aspect
-        # Лэйаутам подсказываем: размер фиксированный (мы сами контролируем)
+
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
     def setSvg(self, svg_path: Path):

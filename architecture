@@ -1,6 +1,10 @@
+data/
+  inspectors_df.csv
+  inwork_tasks_df.csv
+  new_tasks_df.csv
 app/
   main_window.py        # сборка UI, маршрутизация сигналов
-  core/
+  core/                 # Кор-логика, которая приходить из Анализа
     deap_optim.py       # функции DEAP-оптимизации
     inspectors.py        # муравьиный алгоритм
   services/

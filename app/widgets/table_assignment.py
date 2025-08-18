@@ -30,18 +30,13 @@ from PySide6.QtWidgets import (
 
 @dataclass
 class ColumnFormat:
-    """Правила форматирования колонки."""
-    # пример: "{:,.0f}", "{:.2%}", "{:.3f}"
     fmt: Optional[str] = None
     align_right: bool = True
-    # опционально: подсветка NaN/пустых
     nan_text: str = ""
-    # пользовательская функция формата: func(value) -> str
     func: Optional[callable] = None
 
 
 def _default_format_for_dtype(dtype: Any) -> ColumnFormat:
-    """Автоформат по типу данных pandas."""
     if pd.api.types.is_numeric_dtype(dtype):
         return ColumnFormat(fmt="{:,.0f}", align_right=True)
     return ColumnFormat(fmt=None, align_right=False)
@@ -50,10 +45,6 @@ def _default_format_for_dtype(dtype: Any) -> ColumnFormat:
 # --------------------------------- МОДЕЛЬ -------------------------------------
 
 class PandasTableModel(QAbstractTableModel):
-    """
-    Неперерисовывающаяся модель для pandas.DataFrame (read-only),
-    с корректной сортировкой через proxy.
-    """
     def __init__(self, df: pd.DataFrame | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self._df: pd.DataFrame = df.copy() if df is not None else pd.DataFrame()
@@ -68,7 +59,6 @@ class PandasTableModel(QAbstractTableModel):
         self.endResetModel()
 
     def set_column_formats(self, mapping: Dict[str, ColumnFormat]) -> None:
-        """Переопределить формат для выбранных колонок."""
         self.beginResetModel()
         for col, cfg in mapping.items():
             if col in self._df.columns:
@@ -79,17 +69,17 @@ class PandasTableModel(QAbstractTableModel):
         return self._df
 
     # ---------- QAbstractTableModel ----------
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  
         if parent.isValid():
             return 0
         return 0 if self._df is None else len(self._df)
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int: 
         if parent.isValid():
             return 0
         return 0 if self._df is None else self._df.shape[1]
 
-    def headerData(  # noqa: N802
+    def headerData( 
         self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole
     ) -> Any:
         if role != Qt.DisplayRole:
@@ -105,7 +95,7 @@ class PandasTableModel(QAbstractTableModel):
             # индекс строки (1-based удобнее глазу)
             return str(section + 1)
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:  # noqa: N802
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
         if not index.isValid() or self._df is None:
             return None
 
@@ -143,13 +133,12 @@ class PandasTableModel(QAbstractTableModel):
 
         return None
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlags:  # noqa: N802
+    def flags(self, index: QModelIndex) -> Qt.ItemFlags: 
         if not index.isValid():
             return Qt.NoItemFlags
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable  # read-only
 
 
-    # ---------- приватные ----------
     def _init_default_formats(self) -> None:
         self._col_formats.clear()
         if self._df is None or self._df.empty:
@@ -158,7 +147,7 @@ class PandasTableModel(QAbstractTableModel):
             self._col_formats[col] = _default_format_for_dtype(self._df[col].dtype)
 
 
-# ------------------------------ ПРОКСИ-СОРТИРОВКА -----------------------------
+# -------------------------------- ПРОКСИ МОДЕЛЬ СОРТИРОВКИ И ФИЛЬТРА -------------------------------
 
 class NumericAwareSortProxy(QSortFilterProxyModel):
     """
@@ -203,7 +192,7 @@ class NumericAwareSortProxy(QSortFilterProxyModel):
         else:
             self.setFilterRegularExpression(QRegularExpression())
 
-    def filterAcceptsRow(  # noqa: N802
+    def filterAcceptsRow(
         self, source_row: int, source_parent: QModelIndex
     ) -> bool:
         if not self._filter_text:
@@ -212,7 +201,6 @@ class NumericAwareSortProxy(QSortFilterProxyModel):
         if not isinstance(model, PandasTableModel):
             return True
         df = model.dataframe()
-        # Простой «contains» по любой ячейке строки
         for c in range(df.shape[1]):
             val = df.iat[source_row, c]
             if pd.isna(val):
@@ -226,7 +214,7 @@ class NumericAwareSortProxy(QSortFilterProxyModel):
 
 class AssignmentTable(QTableView):
     """
-    Готовый виджет для отображения assignment_df:
+    assignment_df:
       - set_dataframe(df)
       - сортировка по клику на заголовке
       - авто-подгон ширины столбцов

@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (QApplication,
 
 from core.deap_optim import _evaluation
 
-from style.svg_logo import SvgLogo
+from style.svg_logo import SvgLogo, resource_path
 from style.colors import STYLE_FNS
 
 from widgets.pareto_canvas import ParetoCanvas
@@ -69,12 +69,12 @@ class MainWindow(QMainWindow):
         self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
         self.root_layout.addWidget(self.plot, stretch=4)
 
-        filter_box = QGroupBox("Фильтр эффективности")
-        self.slider = QSlider(Qt.Horizontal); self.slider.setRange(0, 100); self.slider.setValue(0)
-        self.slider_label = QLabel("≥ 0 %")
-        self.slider.valueChanged.connect(self._on_slider)
-        flay = QVBoxLayout(filter_box); flay.addWidget(self.slider); flay.addWidget(self.slider_label, alignment=Qt.AlignCenter)
-        self.root_layout.addWidget(filter_box)
+        # filter_box = QGroupBox("Фильтр эффективности")
+        # self.slider = QSlider(Qt.Horizontal); self.slider.setRange(0, 100); self.slider.setValue(0)
+        # self.slider_label = QLabel("≥ 0 %")
+        # self.slider.valueChanged.connect(self._on_slider)
+        # flay = QVBoxLayout(filter_box); flay.addWidget(self.slider); flay.addWidget(self.slider_label, alignment=Qt.AlignCenter)
+        # self.root_layout.addWidget(filter_box)
 
         bottom = QHBoxLayout(); self.root_layout.addLayout(bottom, stretch=3)
 
@@ -210,7 +210,7 @@ class MainWindow(QMainWindow):
 
     def _set_ui_enabled(self, enabled: bool) -> None:
         self.menuBar().setEnabled(enabled)
-        self.slider.setEnabled(enabled)
+        # self.slider.setEnabled(enabled)
         for btn in self.btn_group.buttons():
             btn.setEnabled(enabled)
 
@@ -269,10 +269,11 @@ class MainWindow(QMainWindow):
             eff=self.future_eff,
             y_label="Взвешенная нагрузка (ед.)",
         )
-
+ #svg_path = Path(__file__).with_name("style").joinpath("logo.svg")
     # ------------------------ Остальное без изменений -------------------------
     def _build_header(self) -> None:
-        svg_path = Path(__file__).with_name("style").joinpath("logo.svg")
+        svg_path = resource_path("style", "logo.svg")
+
         logo = SvgLogo(svg_path, preferred_height=80)
         header_widget = QWidget(); header_widget.setObjectName("Header")
         header_widget.setStyleSheet(f"#Header {{ background-color: {STYLE_FNS}; border: none; }}")
@@ -319,9 +320,9 @@ class MainWindow(QMainWindow):
             eff=eff, y_label="Взвешенная нагрузка (ед.)",
         )
 
-    def _on_slider(self, value: int) -> None:
-        self.plot.filter_eff(value)
-        self.slider_label.setText(f"≥ {value} %")
+    # def _on_slider(self, value: int) -> None:
+    #     self.plot.filter_eff(value)
+    #     self.slider_label.setText(f"≥ {value} %")
 
     def save_png(self) -> None:
         filename, _ = QFileDialog.getSaveFileName(self, "Сохранить график", "", "PNG (*.png)")
@@ -358,19 +359,3 @@ class MainWindow(QMainWindow):
 
     #     # 3) Обновить таблицу результатов и графики
     #     self._after_data_loaded_initial()
-
-
-# QWidget { background-color: #001f3f; color: #e0f0ff; }
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyleSheet(
-        f"""
-        QPushButton {{ background-color: {STYLE_FNS}; color: white; padding: 4px 8px; border: none; border-radius: 4px; }}
-        QPushButton:hover {{ background-color: {STYLE_FNS}; }}
-        QGroupBox {{ border: 1px solid {STYLE_FNS}; margin-top: 6px; }}
-        QGroupBox:title {{ subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; }}
-        """
-    )
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
