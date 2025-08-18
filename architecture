@@ -1,0 +1,17 @@
+app/
+  main_window.py        # сборка UI, маршрутизация сигналов
+  core/
+    deap_optim.py       # функции DEAP-оптимизации
+    inspectors.py        # муравьиный алгоритм
+  services/
+    data_loader.py      # I/O + подготовка -> DataState
+  models/
+    state.py            # @dataclass DataState
+    metrics.py          # _evaluation, _task_counts и т.п.
+  widgets/
+    pareto_canvas.py
+    hist_counts.py
+    hist_weighted.py
+    table_assignment.py
+  style/
+    colors.py           # константы цветов
