@@ -2,8 +2,9 @@ name: build-windows-exe
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch: {}
+    tags:
+      - "v*"          # запуск при пуше тега
+  workflow_dispatch: {} # ручной запуск
 
 jobs:
   build:
@@ -17,12 +18,14 @@ jobs:
           python-version: "3.12"
 
       - name: Install deps
+        shell: pwsh
         run: |
           python -m pip install -U pip wheel
           pip install PyInstaller PySide6 matplotlib numpy pandas
           if (Test-Path requirements.txt) { pip install -r requirements.txt }
 
       - name: Build (PyInstaller)
+        shell: pwsh
         run: |
           pyinstaller --noconfirm --clean `
             --name ParetoAnalyzer `
@@ -31,10 +34,44 @@ jobs:
             --collect-all matplotlib `
             --collect-submodules matplotlib.backends `
             --add-data "app/style;style" `
+            --exclude-module PyQt5 --exclude-module PyQt5.sip --exclude-module PyQt6 --exclude-module PySide2 --exclude-module qtpy `
             app/main.py
 
-      - name: Upload artifact
+      - name: Zip dist
+        shell: pwsh
+        run: |
+          cd dist/ParetoAnalyzer
+          Compress-Archive -Path * -DestinationPath ../../ParetoAnalyzer-win.zip
+          cd ../..
+
+      - name: Upload artifact (CI)
         uses: actions/upload-artifact@v4
         with:
           name: ParetoAnalyzer-win
           path: dist/ParetoAnalyzer/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact zip
+        uses: actions/download-artifact@v4
+        with:
+          name: ParetoAnalyzer-win
+          path: ./appdir
+
+      # Если вы уже сделали zip в job build:
+      - name: Find packaged zip
+        run: |
+            if [ -f dist/ParetoAnalyzer-win.zip ]; then echo "ZIP=dist/ParetoAnalyzer-win.zip" >> $GITHUB_ENV; fi
+            if [ -f appdir/ParetoAnalyzer.exe ]; then zip -r ParetoAnalyzer-win.zip appdir/*; echo "ZIP=ParetoAnalyzer-win.zip" >> $GITHUB_ENV; fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}           # тег как версия (v1.0.0)
+          name: Release ${{ github.ref_name }}
+          files: |
+            dist/ParetoAnalyzer-win.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
