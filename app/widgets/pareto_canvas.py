@@ -48,9 +48,8 @@ class ParetoCanvas(QWidget):
 
         # первичная отрисовка
         self._redraw()
-
-        # Если нужен выбор точки — раскомментируйте заготовку:
-        # self.canvas.mpl_connect("button_press_event", self._on_click)
+        # обработчик выбора точки на диаграмме Парето
+        self.canvas.mpl_connect("button_press_event", self._on_click)
 
     # -------------------- ПУБЛИЧНЫЙ API --------------------
 
@@ -112,4 +111,26 @@ class ParetoCanvas(QWidget):
 
         self.fig.tight_layout()
         self.canvas.draw_idle()
+
+    def _on_click(self, event) -> None:
+        """Обработка клика по точке Парето"""
+        if event.inaxes != self.ax or event.xdata is None or event.ydata is None:
+            return
+
+        # координаты и соответствующие им особи
+        p_xs, p_ys, meta = self._unpack(self._pareto)
+        if p_xs.size == 0 or p_ys.size == 0 or len(meta) == 0:
+            return
+
+        meta_arr = np.asarray(meta, dtype=object)
+        if self._eff_threshold > 0:
+            mask = p_ys >= self._eff_threshold
+            p_xs, p_ys, meta_arr = p_xs[mask], p_ys[mask], meta_arr[mask]
+        if p_xs.size == 0:
+            return
+
+        # найти ближайшую точку
+        dists = np.hypot(p_xs - event.xdata, p_ys - event.ydata)
+        idx = int(dists.argmin())
+        self.pointSelected.emit(meta_arr[idx])
 

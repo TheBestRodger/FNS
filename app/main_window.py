@@ -141,7 +141,9 @@ class MainWindow(QMainWindow):
         self._set_ui_enabled(False)
 
         # Статус-бар прогресс
-        self.sb_progress.setValue(0)
+        # сбрасываем и показываем индикатор на каждую новую загрузку
+        self.sb_progress.setRange(0, 100)
+        self.sb_progress.reset()
         self.sb_progress.setVisible(True)
 
         # Модальный прогресс-диалог (информативные подписи этапов)
@@ -182,6 +184,7 @@ class MainWindow(QMainWindow):
         if self.progress_dlg:
             self.progress_dlg.close()
             self.progress_dlg = None
+        self.sb_progress.reset()
         self.sb_progress.setVisible(False)
         self.statusBar().clearMessage()
 
@@ -193,6 +196,7 @@ class MainWindow(QMainWindow):
         if self.progress_dlg:
             self.progress_dlg.close()
             self.progress_dlg = None
+        self.sb_progress.reset()
         self.sb_progress.setVisible(False)
         self.statusBar().clearMessage()
         self._set_ui_enabled(True)
