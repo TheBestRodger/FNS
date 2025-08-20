@@ -172,24 +172,31 @@ class MainWindow(QMainWindow):
 
         self.loader_thread.start()
 
-    def _on_load_progress(self, percent: int, message: str) -> None:
+    def _update_progress(self, percent: int, message: str) -> None:
+        """Helper to update both progress indicators and process UI events."""
         if self.progress_dlg:
             self.progress_dlg.setLabelText(message)
             self.progress_dlg.setValue(percent)
         self.sb_progress.setValue(percent)
         self.statusBar().showMessage(message)
+        QApplication.processEvents()
+
+    def _on_load_progress(self, percent: int, message: str) -> None:
+        # Логика загрузки занимает первую половину прогресса (0-50)
+        self._update_progress(percent // 2, message)
 
     def _on_load_finished(self, state: DataState) -> None:
-        # Закрыть прогресс
+        # После загрузки используем вторую половину прогресса для отрисовки
+        self._update_progress(50, "Обработка результатов...")
+        self._apply_state(state)
+
+        # Завершить прогресс
         if self.progress_dlg:
             self.progress_dlg.close()
             self.progress_dlg = None
         self.sb_progress.reset()
         self.sb_progress.setVisible(False)
         self.statusBar().clearMessage()
-
-        # Применить данные в UI
-        self._apply_state(state)
         self._set_ui_enabled(True)
 
     def _on_load_error(self, text: str) -> None:
@@ -219,6 +226,7 @@ class MainWindow(QMainWindow):
         self.data_dir = s.data_dir
 
         # Pareto
+        self._update_progress(60, "Отрисовка Парето-фронта...")
         self.populations = s.populations
         self.pareto_front = s.pareto_front
         if hasattr(self.plot, "setData"):
@@ -231,6 +239,8 @@ class MainWindow(QMainWindow):
             self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
             self.root_layout.insertWidget(old_index, self.plot, stretch=4)
             self.plot.pointSelected.connect(self.show_params)
+
+        self._update_progress(70, "Обновление таблицы...")
 
         # Таблица назначений
         self.assignment_df = s.assignment_df
@@ -252,6 +262,8 @@ class MainWindow(QMainWindow):
         self.sorted_future_load = s.future_load_sorted
         self.future_eff = s.future_eff
 
+        self._update_progress(90, "Построение гистограмм...")
+
         # Перерисовка правых графиков
         counts_all = self._task_counts(self.current_individ + self.future_individ)
         self.hist_counts.update_counts(counts_all)
@@ -269,6 +281,8 @@ class MainWindow(QMainWindow):
             eff=self.future_eff,
             y_label="Взвешенная нагрузка (ед.)",
         )
+
+        self._update_progress(100, "Готово")
  #svg_path = Path(__file__).with_name("style").joinpath("logo.svg")
     # ------------------------ Остальное без изменений -------------------------
     def _build_header(self) -> None:
