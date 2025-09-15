@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 @dataclass
@@ -24,3 +24,4 @@ class DataState:
     future_eff: float | None
     future_load_sorted: np.ndarray
     inspectors_index: list[int]
+    available_tnos: list[int] = field(default_factory=list)
