@@ -29,6 +29,9 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QStatusBar,
     QProgressBar,
+    QDialog,
+    QListWidget,
+    QListWidgetItem,
     QToolButton,
     QMenu,
 )
@@ -137,6 +140,9 @@ class MainWindow(QMainWindow):
         save_act.triggered.connect(self.save_png)
         load_act = self.menuBar().addAction("Load CSVs…")
         load_act.triggered.connect(self.choose_csv_dir)
+        self.tno_action = self.menuBar().addAction(f"ТНО: {self.selected_tno}")
+        self.tno_action.setEnabled(False)
+        self.tno_action.triggered.connect(self.open_tno_dialog)
 
         # Статус-бар + индикатор прогресса (постоянный)
         sb = QStatusBar(self); self.setStatusBar(sb)
@@ -242,7 +248,8 @@ class MainWindow(QMainWindow):
         # self.slider.setEnabled(enabled)
         for btn in self.btn_group.buttons():
             btn.setEnabled(enabled)
-        self.tno_button.setEnabled(enabled and bool(self.available_tnos))
+
+        self.tno_action.setEnabled(enabled and bool(self.available_tnos))
 
     # ------------------------ Применение состояния ----------------------------
     def _apply_state(self, s: DataState) -> None:
@@ -280,12 +287,8 @@ class MainWindow(QMainWindow):
         self.den_TNO = s.den_TNO
 
         self.available_tnos = s.available_tnos
-        self.tno_menu.clear()
-        for tno in self.available_tnos:
-            action = self.tno_menu.addAction(str(tno))
-            action.triggered.connect(lambda _=False, x=tno: self._select_tno(x))
-        self.tno_button.setEnabled(bool(self.available_tnos))
-        self.tno_button.setText(f"ТНО: {self.selected_tno}")
+        self.tno_action.setEnabled(bool(self.available_tnos))
+        self.tno_action.setText(f"ТНО: {self.selected_tno}")
 
         # Оси/метрики
         self.inspectors_index = s.inspectors_index
@@ -336,7 +339,6 @@ class MainWindow(QMainWindow):
         self.tno_button.setMenu(self.tno_menu)
         header.addWidget(self.tno_button)
 
-        self.root_layout.addWidget(header_widget)
 
     def _task_counts(self, individual: Sequence[int]) -> np.ndarray:
         counts = np.zeros(self.M, dtype=int)
@@ -394,11 +396,30 @@ class MainWindow(QMainWindow):
         # (в _on_load_finished->_apply_state данные придут, дальше просто setData())
         self.result_table.set_dataframe(self.assignment_df)
 
+    def open_tno_dialog(self) -> None:
+        if not self.available_tnos:
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Выбор ТНО")
+        layout = QVBoxLayout(dlg)
+        list_widget = QListWidget(dlg)
+        for tno in sorted(self.available_tnos):
+            item = QListWidgetItem(str(tno), list_widget)
+            if tno == self.selected_tno:
+                item.setSelected(True)
+        list_widget.itemClicked.connect(lambda item: self._select_tno(int(item.text())))
+        layout.addWidget(list_widget)
+        dlg.setModal(False)
+        dlg.show()
+        self._tno_dialog = dlg
+
     def _select_tno(self, tno: int) -> None:
         if tno == self.selected_tno:
             return
         self.selected_tno = tno
-        self.tno_button.setText(f"ТНО: {tno}")
+
+        self.tno_action.setText(f"ТНО: {tno}")
+
         self.start_load(self.data_dir, tno)
     # def choose_csv_dir(self) -> None:
     #     """Выбор новой директории с CSV и обновление всех виджетов."""
