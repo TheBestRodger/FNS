@@ -8,11 +8,30 @@ import numpy as np
 import pandas as pd
 
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtWidgets import (QApplication,
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
-    QLabel, QGroupBox, QSlider, QSizePolicy, QTableWidget, QTableWidgetItem,
-    QPushButton, QStackedLayout, QButtonGroup, QFileDialog, QMessageBox,
-    QProgressDialog, QStatusBar, QProgressBar
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFrame,
+    QLabel,
+    QGroupBox,
+    QSlider,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QPushButton,
+    QStackedLayout,
+    QButtonGroup,
+    QFileDialog,
+    QMessageBox,
+    QProgressDialog,
+    QStatusBar,
+    QProgressBar,
+    QDialog,
+    QListWidget,
+    QListWidgetItem,
 )
 
 from core.deap_optim import _evaluation
@@ -53,6 +72,8 @@ class MainWindow(QMainWindow):
         self.N = self.M = 0
         self.task_cat = np.array([])
         self.den_TNO: dict = {}
+        self.available_tnos: list[int] = []
+        self.selected_tno: int = 3700
 
         # ----------- UI
         central = QWidget()
@@ -117,6 +138,9 @@ class MainWindow(QMainWindow):
         save_act.triggered.connect(self.save_png)
         load_act = self.menuBar().addAction("Load CSVs…")
         load_act.triggered.connect(self.choose_csv_dir)
+        self.tno_action = self.menuBar().addAction(f"ТНО: {self.selected_tno}")
+        self.tno_action.setEnabled(False)
+        self.tno_action.triggered.connect(self.open_tno_dialog)
 
         # Статус-бар + индикатор прогресса (постоянный)
         sb = QStatusBar(self); self.setStatusBar(sb)
@@ -131,13 +155,15 @@ class MainWindow(QMainWindow):
         self.plot.pointSelected.connect(self.show_params)
 
         # ---- ПЕРВИЧНАЯ ЗАГРУЗКА (асинхронно) ----
-        self.start_load(self.data_dir)
+        self.start_load(self.data_dir, self.selected_tno)
 
         self.resize(1020, 720)
 
     # ------------------------ Асинхронная загрузка ---------------------------
-    def start_load(self, data_dir: Path) -> None:
+    def start_load(self, data_dir: Path, no_code: int | None = None) -> None:
         """Запустить загрузку данных в отдельном потоке."""
+        if no_code is not None:
+            self.selected_tno = no_code
         self._set_ui_enabled(False)
 
         # Статус-бар прогресс
@@ -156,7 +182,7 @@ class MainWindow(QMainWindow):
 
         # Поток + воркер
         self.loader_thread = QThread(self)
-        self.loader_worker = LoadWorker(Path(data_dir))
+        self.loader_worker = LoadWorker(Path(data_dir), self.selected_tno)
         self.loader_worker.moveToThread(self.loader_thread)
 
         # wiring
@@ -220,6 +246,7 @@ class MainWindow(QMainWindow):
         # self.slider.setEnabled(enabled)
         for btn in self.btn_group.buttons():
             btn.setEnabled(enabled)
+        self.tno_action.setEnabled(enabled and bool(self.available_tnos))
 
     # ------------------------ Применение состояния ----------------------------
     def _apply_state(self, s: DataState) -> None:
@@ -238,13 +265,20 @@ class MainWindow(QMainWindow):
             self.plot.deleteLater()
             self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
             self.root_layout.insertWidget(old_index, self.plot, stretch=4)
-            self.plot.pointSelected.connect(self.show_params)
+
+        # Ensure the histogram callback is connected after each reload
+        try:
+            self.plot.pointSelected.disconnect()
+        except TypeError:
+            pass
+        self.plot.pointSelected.connect(self.show_params)
 
         self._update_progress(70, "Обновление таблицы...")
 
         # Таблица назначений
         self.assignment_df = s.assignment_df
         self.result_table.set_dataframe(self.assignment_df)
+        self.table.setRowCount(0)
 
         # Текущие/будущие
         self.current_inspectors = s.current_inspectors
@@ -255,6 +289,10 @@ class MainWindow(QMainWindow):
         self.N, self.M = s.N, s.M
         self.task_cat = s.task_cat
         self.den_TNO = s.den_TNO
+
+        self.available_tnos = s.available_tnos
+        self.tno_action.setEnabled(bool(self.available_tnos))
+        self.tno_action.setText(f"ТНО: {self.selected_tno}")
 
         # Оси/метрики
         self.inspectors_index = s.inspectors_index
@@ -296,6 +334,7 @@ class MainWindow(QMainWindow):
         subtitle = QLabel("НОЦ ФНС России и МГТУ им. Н. Э. Баумана"); subtitle.setStyleSheet("font-size: 14px; color: #333;")
         title_layout.addWidget(logo); title_layout.addWidget(subtitle)
         header.addLayout(title_layout); header.addStretch(1)
+
         self.root_layout.addWidget(header_widget)
 
     def _task_counts(self, individual: Sequence[int]) -> np.ndarray:
@@ -350,9 +389,35 @@ class MainWindow(QMainWindow):
             return
 
         # Пересоздаём ParetoCanvas после загрузки — тогда, когда будут данные
-        self.start_load(Path(new_dir))
+        self.start_load(Path(new_dir), self.selected_tno)
         # (в _on_load_finished->_apply_state данные придут, дальше просто setData())
         self.result_table.set_dataframe(self.assignment_df)
+
+    def open_tno_dialog(self) -> None:
+        if not self.available_tnos:
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Выбор ТНО")
+        layout = QVBoxLayout(dlg)
+        list_widget = QListWidget(dlg)
+        for tno in sorted(self.available_tnos):
+            item = QListWidgetItem(str(tno), list_widget)
+            if tno == self.selected_tno:
+                item.setSelected(True)
+        list_widget.itemClicked.connect(lambda item: self._select_tno(int(item.text())))
+        layout.addWidget(list_widget)
+        dlg.setModal(False)
+        dlg.show()
+        self._tno_dialog = dlg
+
+    def _select_tno(self, tno: int) -> None:
+        if tno == self.selected_tno:
+            return
+        self.selected_tno = tno
+        self.tno_action.setText(f"ТНО: {tno}")
+        self.start_load(self.data_dir, tno)
+        if hasattr(self, "_tno_dialog") and self._tno_dialog:
+            self._tno_dialog.close()
     # def choose_csv_dir(self) -> None:
     #     """Выбор новой директории с CSV и обновление всех виджетов."""
     #     new_dir = QFileDialog.getExistingDirectory(self, "Выбрать папку с CSV", str(self.data_dir))
