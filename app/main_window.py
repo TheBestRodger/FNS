@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QToolButton,
     QMenu,
+
 )
 
 from core.deap_optim import _evaluation
@@ -240,7 +241,6 @@ class MainWindow(QMainWindow):
         # self.slider.setEnabled(enabled)
         for btn in self.btn_group.buttons():
             btn.setEnabled(enabled)
-
         self.tno_action.setEnabled(enabled and bool(self.available_tnos))
 
     # ------------------------ Применение состояния ----------------------------
@@ -260,13 +260,20 @@ class MainWindow(QMainWindow):
             self.plot.deleteLater()
             self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
             self.root_layout.insertWidget(old_index, self.plot, stretch=4)
-            self.plot.pointSelected.connect(self.show_params)
+
+        # Ensure the histogram callback is connected after each reload
+        try:
+            self.plot.pointSelected.disconnect()
+        except TypeError:
+            pass
+        self.plot.pointSelected.connect(self.show_params)
 
         self._update_progress(70, "Обновление таблицы...")
 
         # Таблица назначений
         self.assignment_df = s.assignment_df
         self.result_table.set_dataframe(self.assignment_df)
+        self.table.setRowCount(0)
 
         # Текущие/будущие
         self.current_inspectors = s.current_inspectors
@@ -322,12 +329,6 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(logo); title_layout.addWidget(subtitle)
         header.addLayout(title_layout); header.addStretch(1)
 
-        self.tno_button = QToolButton()
-        self.tno_button.setText("Выбор ТНО")
-        self.tno_button.setEnabled(False)
-        self.tno_button.setPopupMode(QToolButton.InstantPopup)
-        self.tno_menu = QMenu(self.tno_button)
-        self.tno_button.setMenu(self.tno_menu)
         self.root_layout.addWidget(header_widget)
 
 
@@ -403,7 +404,28 @@ class MainWindow(QMainWindow):
         if tno == self.selected_tno:
             return
         self.selected_tno = tno
-
         self.tno_action.setText(f"ТНО: {tno}")
-
         self.start_load(self.data_dir, tno)
+        if hasattr(self, "_tno_dialog") and self._tno_dialog:
+            self._tno_dialog.close()
+
+    # def choose_csv_dir(self) -> None:
+    #     """Выбор новой директории с CSV и обновление всех виджетов."""
+    #     new_dir = QFileDialog.getExistingDirectory(self, "Выбрать папку с CSV", str(self.data_dir))
+    #     if not new_dir:
+    #         return
+
+    #     # 1) Перезагрузка данных
+    #     self._load_data(Path(new_dir))
+    #     self.result_table.set_dataframe(self.assignment_df)
+    #     # 2) Пересоздать ParetoCanvas (он зависит от populations/pareto_front)
+    #     old_index = self.root_layout.indexOf(self.plot)
+    #     self.root_layout.removeWidget(self.plot)
+    #     self.plot.deleteLater()
+
+    #     self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
+    #     self.root_layout.insertWidget(old_index, self.plot, stretch=4)
+    #     self.plot.pointSelected.connect(self.show_params)
+
+    #     # 3) Обновить таблицу результатов и графики
+    #     self._after_data_loaded_initial()
