@@ -47,8 +47,8 @@ class LoadWorker(QObject):
             available_tnos = counts[counts > 1].index.astype(int).tolist()
 
             self.progress.emit(25, "Чтение результатов оптимизации...")
-            populations, pareto_front = get_results(data_dir=self.data_dir)
-            assignment_df = get_assignment_table(data_dir=self.data_dir)
+            populations, pareto_front = get_results(data_dir=self.data_dir, no_code=self.no_code)
+            assignment_df = get_assignment_table(data_dir=self.data_dir, no_code=self.no_code)
 
             self.progress.emit(45, "Подготовка текущих данных...")
             current_inspectors, current_df = _filter_by_no(self.no_code, inspector_df, inwork_df)
