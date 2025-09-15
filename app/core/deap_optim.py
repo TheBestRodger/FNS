@@ -161,10 +161,7 @@ def _run_evolution(data_dir: str | Path, no_code: int) -> Tuple[Tuple, Tuple]:
         empty = ([], [], tuple())
         return empty, empty
 
-    in_work_indiv = in_work_no_df.merge(no_inspectors_df[['Inspector index', 'Инспектор, сменивший статус']], left_on='Инспектор, сменивший статус', right_on='Инспектор, сменивший статус', how='left')
-    in_work_indiv = in_work_indiv['Inspector index'].to_list()
-        
-    hof, uniq_pareto = _multi_optimization(task_prob, N, M, task_cat, den_TNO, in_work_indiv)
+    hof, uniq_pareto = _multi_optimization(task_prob, N, M, task_cat, den_TNO)
 
     all_generations = hof.items
     populations_xy = list(zip(*[ind.fitness.values for ind in all_generations]))

@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QToolButton,
     QMenu,
-
+)
 from core.deap_optim import _evaluation
 
 from style.svg_logo import SvgLogo, resource_path
