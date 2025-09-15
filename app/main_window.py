@@ -337,6 +337,7 @@ class MainWindow(QMainWindow):
 
         self.root_layout.addWidget(header_widget)
 
+
     def _task_counts(self, individual: Sequence[int]) -> np.ndarray:
         counts = np.zeros(self.M, dtype=int)
         for idx in individual:
