@@ -44,11 +44,18 @@ class LoadWorker(QObject):
             self.progress.emit(5, "Чтение CSV...")
             inspector_df, new_df, inwork_df = _get_dataframe(self.data_dir)
             counts = new_df['Код НО инспектора, сменившего стат'].value_counts()
-            available_tnos = counts[counts > 1].index.astype(int).tolist()
+            # Предлагаем к выбору только те ТНО, которые есть и в задачах,
+            # и в справочнике инспекторов. Это исключает варианты без
+            # соответствующих сотрудников (M == 0), что ранее приводило к
+            # падению при оценке распределения.
+            task_tnos = counts[counts > 1].index.astype(int)
+            insp_tnos = inspector_df['Код НО инспектора, сменившего стат'].astype(int)
+            available_tnos = sorted(set(task_tnos) & set(insp_tnos))
+
 
             self.progress.emit(25, "Чтение результатов оптимизации...")
-            populations, pareto_front = get_results(data_dir=self.data_dir)
-            assignment_df = get_assignment_table(data_dir=self.data_dir)
+            populations, pareto_front = get_results(data_dir=self.data_dir, no_code=self.no_code)
+            assignment_df = get_assignment_table(data_dir=self.data_dir, no_code=self.no_code)
 
             self.progress.emit(45, "Подготовка текущих данных...")
             current_inspectors, current_df = _filter_by_no(self.no_code, inspector_df, inwork_df)
@@ -73,15 +80,20 @@ class LoadWorker(QObject):
             future_individ = safe_series_to_int_list(future_df["Inspector index"], default=-1)
 
             self.progress.emit(80, "Оценка распределения...")
-            future_load, future_eff = evaluate_distribution(
-                individual=future_individ,
-                den_TNO=den_TNO,
-                task_cat=task_cat,
-                task_prob=task_prob,
-                M=M,
-                current_individ=current_individ,
-                evaluation_func=_evaluation,
-            )
+            if M > 0:
+                future_load, future_eff = evaluate_distribution(
+                    individual=future_individ,
+                    den_TNO=den_TNO,
+                    task_cat=task_cat,
+                    task_prob=task_prob,
+                    M=M,
+                    current_individ=current_individ,
+                    evaluation_func=_evaluation,
+                )
+            else:
+                # нет инспекторов для выбранного ТНО — возвращаем пустые метрики
+                future_load = np.array([], dtype=float)
+                future_eff = None
 
             self.progress.emit(90, "Формирование состояния...")
             future_cnts_sorted = sort_desc(task_counts(future_individ, M))

@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QToolButton,
     QMenu,
-)
 
 from core.deap_optim import _evaluation
 
@@ -242,8 +241,6 @@ class MainWindow(QMainWindow):
             btn.setEnabled(enabled)
         self.tno_action.setEnabled(enabled and bool(self.available_tnos))
 
-        self.tno_action.setEnabled(enabled and bool(self.available_tnos))
-
     # ------------------------ Применение состояния ----------------------------
     def _apply_state(self, s: DataState) -> None:
         self.data_dir = s.data_dir
@@ -405,7 +402,6 @@ class MainWindow(QMainWindow):
         if tno == self.selected_tno:
             return
         self.selected_tno = tno
-
         self.tno_action.setText(f"ТНО: {tno}")
         self.start_load(self.data_dir, tno)
         if hasattr(self, "_tno_dialog") and self._tno_dialog:
