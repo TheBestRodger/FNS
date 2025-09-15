@@ -147,13 +147,13 @@ def _get_dataframe(data_dir: str | Path = ""):
     inwork_df = pd.read_csv(base / "inwork_tasks_df.csv")
     return inspectors_df, new_df, inwork_df
 
-def _run_evolution(data_dir: str | Path, no_code: int) -> Tuple[Tuple, Tuple]:
-    """Run optimisation pipeline using CSVs from ``data_dir`` for given TNO."""
+def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
+    """Run optimisation pipeline using CSVs from ``data_dir``."""
 
     inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     print("Inspectors DataFrame:", inspectors_df.head())
     print("New Tasks DataFrame:", new_df.head())
-    no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
+    no_inspectors_df, no_df = _filter_by_no(3700, inspectors_df, new_df)
     task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df)
 
     if N == 0 or M == 0:
@@ -176,9 +176,9 @@ def _run_evolution(data_dir: str | Path, no_code: int) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_dir: str | Path = "", no_code: int = 3700, recompute: bool = False):
+def get_results(*, data_dir: str | Path = "", recompute: bool = False):
 
-    return _run_evolution(data_dir, no_code)
+    return _run_evolution(data_dir)
 
 # получаем таблицу назначений задач инспекторам
 # (используется в GUI)
@@ -188,7 +188,7 @@ def get_assignment_table(*,
                          data_dir: str | Path = "",
                          recompute: bool = False) -> pd.DataFrame:
 
-    ppopulations, pareto_front = get_results(data_dir=data_dir, no_code=no_code)
+    ppopulations, pareto_front = get_results(data_dir=data_dir)
 
     inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     no_inspectors_df, no_df = _filter_by_no(no_code, inspectors_df, new_df)
