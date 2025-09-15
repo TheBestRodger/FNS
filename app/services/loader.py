@@ -52,6 +52,7 @@ class LoadWorker(QObject):
             insp_tnos = inspector_df['Код НО инспектора, сменившего стат'].astype(int)
             available_tnos = sorted(set(task_tnos) & set(insp_tnos))
 
+
             self.progress.emit(25, "Чтение результатов оптимизации...")
             populations, pareto_front = get_results(data_dir=self.data_dir, no_code=self.no_code)
             assignment_df = get_assignment_table(data_dir=self.data_dir, no_code=self.no_code)
