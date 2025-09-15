@@ -32,6 +32,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QListWidget,
     QListWidgetItem,
+    QToolButton,
+    QMenu,
 )
 
 from core.deap_optim import _evaluation
@@ -246,6 +248,7 @@ class MainWindow(QMainWindow):
         # self.slider.setEnabled(enabled)
         for btn in self.btn_group.buttons():
             btn.setEnabled(enabled)
+
         self.tno_action.setEnabled(enabled and bool(self.available_tnos))
 
     # ------------------------ Применение состояния ----------------------------
@@ -328,7 +331,14 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(logo); title_layout.addWidget(subtitle)
         header.addLayout(title_layout); header.addStretch(1)
 
-        self.root_layout.addWidget(header_widget)
+        self.tno_button = QToolButton()
+        self.tno_button.setText("Выбор ТНО")
+        self.tno_button.setEnabled(False)
+        self.tno_button.setPopupMode(QToolButton.InstantPopup)
+        self.tno_menu = QMenu(self.tno_button)
+        self.tno_button.setMenu(self.tno_menu)
+        header.addWidget(self.tno_button)
+
 
     def _task_counts(self, individual: Sequence[int]) -> np.ndarray:
         counts = np.zeros(self.M, dtype=int)
@@ -407,7 +417,9 @@ class MainWindow(QMainWindow):
         if tno == self.selected_tno:
             return
         self.selected_tno = tno
+
         self.tno_action.setText(f"ТНО: {tno}")
+
         self.start_load(self.data_dir, tno)
     # def choose_csv_dir(self) -> None:
     #     """Выбор новой директории с CSV и обновление всех виджетов."""
