@@ -80,7 +80,7 @@ def _evaluation(individual: list, den_TNO: dict, task_cat: np.array, task_prob: 
         cnt["TASK"]       * task_prob[:, 3]   / den_TNO["TASK"]       
     ).sum() *100
 
-    load = nu.max()
+    load = nu.std()  # равномерность загрузки инспекторов (чем меньше, тем лучше)
     return (load, efficiency) if not results else (nu, efficiency)
 
 
