@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 from typing import Tuple, Sequence
 from functools import partial
@@ -10,12 +11,21 @@ from deap import base, creator, tools, algorithms
 import random
 
 
+_CACHE_FILE = Path(__file__).with_suffix(".pkl")
 # _DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
 # get_results И get_assignment_table используют статичный путь к CSV
 
 def _filter_by_no(no_code: int, inspectors_df: pd.DataFrame, dataframe: pd.DataFrame):
     no_inspectors_df = inspectors_df[inspectors_df['Код НО инспектора, сменившего стат'] == no_code]
     no_inspectors_df["Inspector index"] = [i for i in range(len(no_inspectors_df))]
+
+    mask = no_inspectors_df['Qualification'] >= 0.71 * no_inspectors_df['Qualification'].max()
+
+    # Используем np.where для каждого столбца
+    no_inspectors_df['p_SCHEMA'] = np.where(mask, 0.5, 0)
+    no_inspectors_df['p_RISK_LONG'] = np.where(mask, 0.5, 0)
+    no_inspectors_df['p_RISK_SHORT'] = np.where(mask, 0, 0.5)
+    no_inspectors_df['p_TASK'] = np.where(mask, 0, 0.5)
     
     # Заспределяем новые задачи по НО    
     # dataframe = dataframe.merge(inspectors_df[['Код НО инспектора, сменившего стат']], how='left', left_on='Инспектор, сменивший статус', right_index=True)
@@ -30,8 +40,10 @@ def _start_data_prep(inspectors_df: pd.DataFrame, df: pd.DataFrame, in_work: pd.
     task_prob = [inspectors_df['p_SCHEMA'].to_list(), inspectors_df['p_RISK_LONG'].to_list(), inspectors_df['p_RISK_SHORT'].to_list(), inspectors_df['p_TASK'].to_list(),]
     task_prob = np.array([*zip(*task_prob)])
     
+    # Определения числа распределяемых задач и числа сотрудников --> int, int
     N, M = df.__len__(), inspectors_df.__len__()
-
+    
+    # Создание массива хранящего в себе тип задачи по порядку --> np.array(число распределяемых задач)
     if in_work is not None:
         concate_df = pd.concat([df, in_work])
     else:
@@ -72,12 +84,12 @@ def _evaluation(individual: list, den_TNO: dict, task_cat: np.array, task_prob: 
     return (load, efficiency) if not results else (nu, efficiency)
 
 
-def _multi_optimization(task_prob, N, M, task_cat, den_TNO,
-                        population_size=100, epoches=50, p_crossing=0.5, p_mutation=0.2):
+def _multi_optimization(task_prob, N, M, task_cat, den_TNO, in_work_indiv: list = [],
+                        population_size=100, epoches=50, p_crossing=0.5, p_mutation=0.4):
     random.seed(42)
     np.random.seed(42)
 
-    func = partial(_evaluation, den_TNO=den_TNO, task_cat=task_cat, task_prob=task_prob, M=M)
+    func = partial(_evaluation, den_TNO=den_TNO, task_cat=task_cat, task_prob=task_prob, M=M, current_individ=in_work_indiv)
 
     creator.create('FintesMulti', base.Fitness, weights=(-1, 1)) # load ↓, efficiency ↑
     creator.create('Individual', list, fitness=creator.FintesMulti)
@@ -137,19 +149,24 @@ def _get_dataframe(data_dir: str | Path = ""):
 
 def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
     """Run optimisation pipeline using CSVs from ``data_dir``."""
+    no = 3700
 
     inspectors_df, new_df, inwork_df = _get_dataframe(data_dir)
     print("Inspectors DataFrame:", inspectors_df.head())
     print("New Tasks DataFrame:", new_df.head())
-    no_inspectors_df, no_df = _filter_by_no(3700, inspectors_df, new_df)
-    task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df)
+    no_inspectors_df, no_df = _filter_by_no(no, inspectors_df, new_df)
+    _, in_work_no_df = _filter_by_no(no, inspectors_df, inwork_df)
+    task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors_df, no_df, in_work_no_df)
 
     if N == 0 or M == 0:
         # нет данных для оптимизации
         empty = ([], [], tuple())
         return empty, empty
 
-    hof, uniq_pareto = _multi_optimization(task_prob, N, M, task_cat, den_TNO)
+    in_work_indiv = in_work_no_df.merge(no_inspectors_df[['Inspector index', 'Инспектор, сменивший статус']], left_on='Инспектор, сменивший статус', right_on='Инспектор, сменивший статус', how='left')
+    in_work_indiv = in_work_indiv['Inspector index'].to_list()
+        
+    hof, uniq_pareto = _multi_optimization(task_prob, N, M, task_cat, den_TNO, in_work_indiv)
 
     all_generations = hof.items
     populations_xy = list(zip(*[ind.fitness.values for ind in all_generations]))
@@ -170,7 +187,6 @@ def get_results(*, data_dir: str | Path = "", recompute: bool = False):
 def get_assignment_table(*,
                          pareto_index: int = 0,
                          no_code: int = 3700,
-
                          data_dir: str | Path = "",
                          recompute: bool = False) -> pd.DataFrame:
 
@@ -201,7 +217,7 @@ def get_assignment_table(*,
     return result_df
 # Тесты, чтоб проверить отдельные функции без GUI
 if __name__ == "__main__":
-    pop, pf = get_results()
+    pop, pf = get_results(recompute=True)
     print(
         f"Populations: {len(pop[0])} individuals → first 5:"
         f" {list(zip(pop[0], pop[1]))[:5]}"
