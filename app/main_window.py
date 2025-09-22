@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self.task_prob = np.array([])
         self.N = self.M = 0
         self.task_cat = np.array([])
+        self.task_dir = np.array([])
         self.den_TNO: dict = {}
         self.available_tnos: list[int] = []
         self.selected_tno: int = 3700
@@ -282,6 +283,7 @@ class MainWindow(QMainWindow):
         self.task_prob = s.task_prob
         self.N, self.M = s.N, s.M
         self.task_cat = s.task_cat
+        self.task_dir = s.task_dir
         self.den_TNO = s.den_TNO
 
         self.available_tnos = s.available_tnos
@@ -352,7 +354,7 @@ class MainWindow(QMainWindow):
         self.hist_counts.update_counts(counts)
 
         loads_candidate, eff = _evaluation(
-            ind, self.den_TNO, self.task_cat, self.task_prob, self.M,
+            ind, self.den_TNO, self.task_cat, self.task_dir, self.task_prob, self.M,
             results=True, current_individ=self.current_individ,
         )
 

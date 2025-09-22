@@ -566,14 +566,14 @@ def _get_dataframe(data_dir: str | Path = ""):
     Auto_Stats_df = pd.read_csv(base / "Auto_Stats.csv", index_col=0)
     return exp_inspectors_df, df, Auto_Stats_df
 
-def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
+def _run_evolution(data_dir: str | Path, *, no_code: int) -> Tuple[Tuple, Tuple]:
     """Run optimisation pipeline using CSVs from ``data_dir``."""
 
     exp_inspectors_df, df, Auto_Stats_df = _get_dataframe(data_dir)
     new_tasks_df, inwork_tasks_df, finish_tasks_df = _get_new_type_data(df, Auto_Stats_df, '2024-06-27')
     print("Inspectors DataFrame:", exp_inspectors_df.head())
     print("New Tasks DataFrame:", new_tasks_df.head())
-    no_df, no_inwork_tasks_df, no_new_tasks_df = _filter_by_no(5045, df, inwork_tasks_df, new_tasks_df)
+    no_df, no_inwork_tasks_df, no_new_tasks_df = _filter_by_no(no_code, df, inwork_tasks_df, new_tasks_df)
     main_inspectors_df, inspectors_direction_df  = _create_inspetors_df(no_df, exp_inspectors_df, finish_tasks_df)
     in_work_indiv = no_inwork_tasks_df.merge(main_inspectors_df[['Inspector index']], left_on='Инспектор, сменивший статус', right_index=True, how='left')['Inspector index'].to_list()
     new_tasks_current_indiv = no_new_tasks_df.merge(main_inspectors_df[['Inspector index']], left_on='Инспектор, сменивший статус', right_index=True, how='left')['Inspector index'].to_list()
@@ -609,9 +609,9 @@ def _run_evolution(data_dir: str | Path) -> Tuple[Tuple, Tuple]:
     return tuple(populations_xy), tuple(pareto_xy)
 
 
-def get_results(*, data_dir: str | Path = "", recompute: bool = False):
+def get_results(*, data_dir: str | Path = "", no_code: int = 3700, recompute: bool = False):
 
-    return _run_evolution(data_dir)
+    return _run_evolution(data_dir, no_code=no_code)
 
 # получаем таблицу назначений задач инспекторам
 # (используется в GUI)
@@ -622,8 +622,8 @@ def get_assignment_table(*,
                          data_dir: str | Path = "",
                          recompute: bool = False) -> pd.DataFrame:
 
-    ppopulations, pareto_front = get_results(data_dir=data_dir)
-    
+    _, pareto_front = get_results(data_dir=data_dir, no_code=no_code)
+
     exp_inspectors_df, df, Auto_Stats_df = _get_dataframe(data_dir)
     new_tasks_df, inwork_tasks_df, finish_tasks_df = _get_new_type_data(df, Auto_Stats_df, '2024-06-27')
     no_df, no_inwork_tasks_df, no_new_tasks_df = _filter_by_no(no_code, df, inwork_tasks_df, new_tasks_df)
@@ -654,7 +654,7 @@ def get_assignment_table(*,
     return result_df
 # Тесты, чтоб проверить отдельные функции без GUI
 if __name__ == "__main__":
-    pop, pf = get_results(data_dir="./data/")
+    pop, pf = get_results(data_dir="./data/", no_code=3700)
     print(
         f"Populations: {len(pop[0])} individuals → first 5:"
         f" {list(zip(pop[0], pop[1]))[:5]}"
@@ -664,4 +664,4 @@ if __name__ == "__main__":
         f" {list(zip(pf[0], pf[1]))}"
     )
     print("Sample assignment table:")
-    print(get_assignment_table(data_dir="./data/"))
+    print(get_assignment_table(data_dir="./data/", no_code=3700))

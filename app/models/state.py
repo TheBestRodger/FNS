@@ -17,6 +17,7 @@ class DataState:
     N: int
     M: int
     task_cat: np.ndarray
+    task_dir: np.ndarray
     den_TNO: dict
 
     future_individ: list[int]

@@ -17,7 +17,13 @@ from models.metrics import (
 )
 
 # Доменные функции/константы — подправьте пути импорта под ваш проект
-from core.deap_optim import _get_dataframe, get_results, get_assignment_table
+from core.deap_optim import (
+    _get_dataframe,
+    _get_new_type_data,
+    _create_inspetors_df,
+    get_results,
+    get_assignment_table,
+)
 from core.deap_optim import _filter_by_no, _start_data_prep
 from core.deap_optim import _evaluation  # ваша оценочная функция
 
@@ -42,43 +48,65 @@ class LoadWorker(QObject):
     def run(self) -> None:
         try:
             self.progress.emit(5, "Чтение CSV...")
-            inspector_df, new_df, inwork_df = _get_dataframe(self.data_dir)
-            counts = new_df['Код НО инспектора, сменившего стат'].value_counts()
-            # Предлагаем к выбору только те ТНО, которые есть и в задачах,
-            # и в справочнике инспекторов. Это исключает варианты без
-            # соответствующих сотрудников (M == 0), что ранее приводило к
-            # падению при оценке распределения.
-            task_tnos = counts[counts > 1].index.astype(int)
-            insp_tnos = inspector_df['Код НО инспектора, сменившего стат'].astype(int)
-            in_work_is_no_df = inwork_df['Код НО инспектора, сменившего стат'].astype(int)
-            available_tnos = sorted(set(task_tnos) & set(insp_tnos) & set(in_work_is_no_df))
+            exp_inspectors_df, df, auto_stats_df = _get_dataframe(self.data_dir)
+            new_tasks_df, inwork_tasks_df, finish_tasks_df = _get_new_type_data(df, auto_stats_df)
 
+            def _collect_codes(series: pd.Series) -> set[int]:
+                return set(pd.to_numeric(series, errors="coerce").dropna().astype(int))
+
+            task_tnos = _collect_codes(new_tasks_df["Код НО инспектора, сменившего стат"])
+            inwork_tnos = _collect_codes(inwork_tasks_df["Код НО инспектора, сменившего стат"])
+            df_tnos = _collect_codes(df["Код НО инспектора, сменившего стат"])
+            available_tnos = sorted(task_tnos & inwork_tnos & df_tnos)
+            if self.no_code not in available_tnos:
+                available_tnos = sorted({*available_tnos, self.no_code})
 
             self.progress.emit(25, "Чтение результатов оптимизации...")
-            populations, pareto_front = get_results(data_dir=self.data_dir, no_code=self.no_code)
-            assignment_df = get_assignment_table(data_dir=self.data_dir, no_code=self.no_code)
+            populations, pareto_front = get_results(
+                data_dir=self.data_dir,
+                no_code=self.no_code,
+            )
+            assignment_df = get_assignment_table(
+                data_dir=self.data_dir,
+                no_code=self.no_code,
+            )
 
             self.progress.emit(45, "Подготовка текущих данных...")
-            current_inspectors, current_df = _filter_by_no(self.no_code, inspector_df, inwork_df)
-            current_df = current_df.merge(
-                current_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
-                how="left", on="Инспектор, сменивший статус"
+            no_df, inwork_no_df, new_no_df = _filter_by_no(
+                self.no_code, df, inwork_tasks_df, new_tasks_df
             )
-            current_individ = safe_series_to_int_list(current_df["Inspector index"], default=-1)
+            main_inspectors_df, inspectors_direction_df = _create_inspetors_df(
+                no_df, exp_inspectors_df, finish_tasks_df
+            )
+
+            task_prob, N, M, task_cat, task_dir, den_TNO, maps = _start_data_prep(
+                new_no_df, inspectors_direction_df, inwork_no_df
+            )
+
+            inspector_to_index = maps.get("inspector_id_to_index", {})
+
+            current_df = inwork_no_df.copy()
+            current_df["Inspector index"] = current_df[
+                "Инспектор, сменивший статус"
+            ].map(inspector_to_index)
+            current_individ = safe_series_to_int_list(
+                current_df["Inspector index"], default=-1
+            )
 
             self.progress.emit(60, "Подготовка новых заданий...")
-            no_inspectors, no_df = _filter_by_no(self.no_code, inspector_df, new_df)
-            task_prob, N, M, task_cat, den_TNO = _start_data_prep(no_inspectors, no_df, current_df)
-
-            future_df = no_df[[
-                "Статус РСЗ", "Тип", "Потенциальный ущерб, руб",
-                "ИНН НП", "Инспектор, сменивший статус"
+            future_df = new_no_df[[
+                "Статус РСЗ",
+                "Тип",
+                "Потенциальный ущерб, руб",
+                "ИНН НП",
+                "Инспектор, сменивший статус",
             ]].copy()
-            future_df = future_df.merge(
-                no_inspectors.reset_index()[["Инспектор, сменивший статус", "Inspector index"]],
-                how="left", on="Инспектор, сменивший статус"
+            future_df["Inspector index"] = future_df[
+                "Инспектор, сменивший статус"
+            ].map(inspector_to_index)
+            future_individ = safe_series_to_int_list(
+                future_df["Inspector index"], default=-1
             )
-            future_individ = safe_series_to_int_list(future_df["Inspector index"], default=-1)
 
             self.progress.emit(80, "Оценка распределения...")
             if M > 0:
@@ -86,6 +114,7 @@ class LoadWorker(QObject):
                     individual=future_individ,
                     den_TNO=den_TNO,
                     task_cat=task_cat,
+                    task_dir=task_dir,
                     task_prob=task_prob,
                     M=M,
                     current_individ=current_individ,
@@ -106,10 +135,14 @@ class LoadWorker(QObject):
                 populations=populations,
                 pareto_front=pareto_front,
                 assignment_df=assignment_df,
-                current_inspectors=current_inspectors,
+                current_inspectors=main_inspectors_df,
                 current_individ=current_individ,
                 task_prob=task_prob,
-                N=N, M=M, task_cat=task_cat, den_TNO=den_TNO,
+                N=N,
+                M=M,
+                task_cat=task_cat,
+                task_dir=task_dir,
+                den_TNO=den_TNO,
                 future_individ=future_individ,
                 future_counts_sorted=future_cnts_sorted,
                 future_eff=future_eff,
@@ -131,7 +164,11 @@ class LoadWorker(QObject):
                 current_inspectors=pd.DataFrame(),
                 current_individ=[],
                 task_prob=np.array([]),
-                N=0, M=0, task_cat=np.array([]), den_TNO={},
+                N=0,
+                M=0,
+                task_cat=np.array([]),
+                task_dir=np.array([]),
+                den_TNO={},
                 future_individ=[],
                 future_counts_sorted=np.array([], dtype=int),
                 future_eff=None,
