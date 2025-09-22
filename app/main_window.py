@@ -32,6 +32,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QListWidget,
     QListWidgetItem,
+    QToolButton,
+    QMenu,
 )
 
 from core.deap_optim import _evaluation
@@ -42,11 +44,11 @@ from style.colors import STYLE_FNS
 from widgets.pareto_canvas import ParetoCanvas
 from widgets.hist_counts import HistCountsWidget
 from widgets.hist_weighted import ForecastCountsWidget, WeightedCompareWidget
-from widgets.table_assignment import AssignmentTable            # <-- замена QTableWidget на QTableView
+from widgets.table_assignment import AssignmentTable         
 
 from models.state import DataState
 
-from services.loader import LoadWorker                   # <-- новый воркер
+from services.loader import LoadWorker                  
 
 DATA_DIR = Path("")
 
@@ -89,14 +91,6 @@ class MainWindow(QMainWindow):
 
         self.plot = ParetoCanvas(self.populations, self.pareto_front, self)
         self.root_layout.addWidget(self.plot, stretch=4)
-
-        # filter_box = QGroupBox("Фильтр эффективности")
-        # self.slider = QSlider(Qt.Horizontal); self.slider.setRange(0, 100); self.slider.setValue(0)
-        # self.slider_label = QLabel("≥ 0 %")
-        # self.slider.valueChanged.connect(self._on_slider)
-        # flay = QVBoxLayout(filter_box); flay.addWidget(self.slider); flay.addWidget(self.slider_label, alignment=Qt.AlignCenter)
-        # self.root_layout.addWidget(filter_box)
-
         bottom = QHBoxLayout(); self.root_layout.addLayout(bottom, stretch=3)
 
         # Левый столбец
@@ -321,8 +315,7 @@ class MainWindow(QMainWindow):
         )
 
         self._update_progress(100, "Готово")
- #svg_path = Path(__file__).with_name("style").joinpath("logo.svg")
-    # ------------------------ Остальное без изменений -------------------------
+
     def _build_header(self) -> None:
         svg_path = resource_path("style", "logo.svg")
 
@@ -358,7 +351,7 @@ class MainWindow(QMainWindow):
 
         self.hist_counts.update_counts(counts)
 
-        loads_candidate, eff = _evaluation(  # если у вас обёртка — используйте её
+        loads_candidate, eff = _evaluation(
             ind, self.den_TNO, self.task_cat, self.task_prob, self.M,
             results=True, current_individ=self.current_individ,
         )
@@ -374,10 +367,6 @@ class MainWindow(QMainWindow):
             eff=eff, y_label="Взвешенная нагрузка (ед.)",
         )
 
-    # def _on_slider(self, value: int) -> None:
-    #     self.plot.filter_eff(value)
-    #     self.slider_label.setText(f"≥ {value} %")
-
     def save_png(self) -> None:
         filename, _ = QFileDialog.getSaveFileName(self, "Сохранить график", "", "PNG (*.png)")
         if filename:
@@ -391,7 +380,6 @@ class MainWindow(QMainWindow):
 
         # Пересоздаём ParetoCanvas после загрузки — тогда, когда будут данные
         self.start_load(Path(new_dir), self.selected_tno)
-        # (в _on_load_finished->_apply_state данные придут, дальше просто setData())
         self.result_table.set_dataframe(self.assignment_df)
 
     def open_tno_dialog(self) -> None:
