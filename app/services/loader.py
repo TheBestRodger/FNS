@@ -50,7 +50,8 @@ class LoadWorker(QObject):
             # падению при оценке распределения.
             task_tnos = counts[counts > 1].index.astype(int)
             insp_tnos = inspector_df['Код НО инспектора, сменившего стат'].astype(int)
-            available_tnos = sorted(set(task_tnos) & set(insp_tnos))
+            in_work_is_no_df = inwork_df['Код НО инспектора, сменившего стат'].astype(int)
+            available_tnos = sorted(set(task_tnos) & set(insp_tnos) & set(in_work_is_no_df))
 
 
             self.progress.emit(25, "Чтение результатов оптимизации...")

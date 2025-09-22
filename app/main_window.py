@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QMenu,
 )
+
 from core.deap_optim import _evaluation
 
 from style.svg_logo import SvgLogo, resource_path
@@ -406,7 +407,6 @@ class MainWindow(QMainWindow):
         self.start_load(self.data_dir, tno)
         if hasattr(self, "_tno_dialog") and self._tno_dialog:
             self._tno_dialog.close()
-
     # def choose_csv_dir(self) -> None:
     #     """Выбор новой директории с CSV и обновление всех виджетов."""
     #     new_dir = QFileDialog.getExistingDirectory(self, "Выбрать папку с CSV", str(self.data_dir))
