@@ -5,3 +5,8 @@ __pycache__/
 deap_optim.pkl
 viz.ipynb
 Deap_optimization (2).ipynb
+data/
+.venv/
+.vscode/
+.github/
+.ipynb_checkpoints/

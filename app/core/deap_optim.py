@@ -269,7 +269,7 @@ def _start_data_prep(new_tasks_df: pd.DataFrame, no_inspectors_df: pd.DataFrame,
     tmp["j"] = tmp["j"].astype(int)
 
     # Заполняем тензор p
-    # p_SCHEMA→0, p_RISK_LONG→1, p_RISK_SHORT→2, p_TASK→3
+    # p_SCHEMA->0, p_RISK_LONG->1, p_RISK_SHORT->2, p_TASK->3
     for row in tmp.itertuples(index=False):
         i, j = row.i, row.j
         p[i, 0, j] = getattr(row, p_type_order[0])  # p_SCHEMA
@@ -536,13 +536,12 @@ def _get_dataframe(data_dir: str | Path = ""):
     Parameters
     ----------
     data_dir : str or Path, optional
-        Path to directory containing ``inspectors_df.csv``, ``new_tasks_df.csv``
-        and ``inwork_tasks_df.csv``. Defaults to ``"data"``.
+        Path to directory containing....
     """
 
     base = Path(data_dir)
     exp_inspectors_df = pd.read_csv(base / "exp_inspectors_df.csv", index_col=0)
-    df = pd.read_csv(base / "Automated_RSZ_distribution_enc.csv", sep=';')
+    df = pd.read_csv(base / "Automated_RSZ_distribution_enc.csv", sep=';', low_memory=False)
     df = df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
 
     drop_list = df[(df['Инспектор, сменивший статус'].isna()) & (df['Статус РСЗ'] != 'Новое')]['№ схемы/риска'].unique()
@@ -635,18 +634,24 @@ def get_assignment_table(*,
     if len(uniq_pareto) == 0:
         return pd.DataFrame()
 
-    result_df = no_df[
+    result_df = no_new_tasks_df[
         ['Статус РСЗ', 'Тип', 'Потенциальный ущерб, руб', 'ИНН НП',
          'Инспектор, сменивший статус']
     ].copy()
     
-    result_df['New Inspector index'] = uniq_pareto[pareto_index]
+    assignments = list(uniq_pareto[pareto_index])
+    if len(assignments) != len(result_df):
+        raise ValueError(
+            f"Pareto individual length ({len(assignments)}) does not match number of new tasks ({len(result_df)})."
+        )
+    result_df['New Inspector index'] = assignments
     result_df.reset_index(inplace=True)
     result_df['Статус РСЗ'] = result_df['Статус РСЗ'].replace('Новое', 'В работе')
+    inspector_lookup = no_inspectors_df.reset_index()[
+        ['Инспектор, сменивший статус', 'Inspector index']
+    ].drop_duplicates('Inspector index')
     result_df = result_df.merge(
-        no_inspectors_df.reset_index()[
-            ['Инспектор, сменивший статус', 'Inspector index']
-        ],
+        inspector_lookup,
         how='left',
         left_on='New Inspector index',
         right_on='Inspector index'
@@ -656,11 +661,11 @@ def get_assignment_table(*,
 if __name__ == "__main__":
     pop, pf = get_results(data_dir="./data/", no_code=3700)
     print(
-        f"Populations: {len(pop[0])} individuals → first 5:"
+        f"Populations: {len(pop[0])} individuals -> first 5:"
         f" {list(zip(pop[0], pop[1]))[:5]}"
     )
     print(
-        f"ParetoFront: {len(pf[0])} individuals →"
+        f"ParetoFront: {len(pf[0])} individuals ->"
         f" {list(zip(pf[0], pf[1]))}"
     )
     print("Sample assignment table:")
