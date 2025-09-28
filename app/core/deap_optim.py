@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Tuple, Sequence
 from functools import partial
+from threading import RLock
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,11 @@ import time
 
 # _DEFAULT_DATA = Path(__file__+"data/").with_name("Automated_RSZ_distribution_enc.csv")
 # get_results И get_assignment_table используют статичный путь к CSV
+
+
+_DATAFRAME_CACHE: dict[Path, tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]] = {}
+_RESULTS_CACHE: dict[tuple[Path, int], tuple[Tuple, Tuple]] = {}
+_CACHE_LOCK = RLock()
 
 def _get_new_type_data(df: pd.DataFrame, Auto_Stats: pd.DataFrame, day: str = '2024-06-27', history_new: bool = True):
     df = df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
@@ -530,16 +536,26 @@ def _multi_optimization(
     print(f"Len of Pareto set: {len(uniq_pareto)}")
     return hall_of_fame, uniq_pareto
 
+def _resolve_dir(data_dir: str | Path) -> Path:
+    """Convert ``data_dir`` to an absolute :class:`Path`."""
+
+    return Path(data_dir).expanduser().resolve()
+
+
 def _get_dataframe(data_dir: str | Path = ""):
-    """Load required CSV files from ``data_dir``.
+    """Load required CSV files from ``data_dir`` with basic caching."""
 
-    Parameters
-    ----------
-    data_dir : str or Path, optional
-        Path to directory containing....
-    """
+    base = _resolve_dir(data_dir)
+    with _CACHE_LOCK:
+        cached = _DATAFRAME_CACHE.get(base)
+    if cached is not None:
+        exp_cached, df_cached, stats_cached = cached
+        return (
+            exp_cached.copy(deep=False),
+            df_cached.copy(deep=False),
+            stats_cached.copy(deep=False),
+        )
 
-    base = Path(data_dir)
     exp_inspectors_df = pd.read_csv(base / "exp_inspectors_df.csv", index_col=0)
     df = pd.read_csv(base / "Automated_RSZ_distribution_enc.csv", sep=';', low_memory=False)
     df = df.sort_values(['№ схемы/риска', 'Дата изменения статуса РСЗ'])
@@ -561,9 +577,17 @@ def _get_dataframe(data_dir: str | Path = ""):
             'Задание': 'Task'
         },
         regex=True)
-    
+
     Auto_Stats_df = pd.read_csv(base / "Auto_Stats.csv", index_col=0)
-    return exp_inspectors_df, df, Auto_Stats_df
+
+    with _CACHE_LOCK:
+        _DATAFRAME_CACHE[base] = (exp_inspectors_df, df, Auto_Stats_df)
+
+    return (
+        exp_inspectors_df.copy(deep=False),
+        df.copy(deep=False),
+        Auto_Stats_df.copy(deep=False),
+    )
 
 def _run_evolution(data_dir: str | Path, *, no_code: int) -> Tuple[Tuple, Tuple]:
     """Run optimisation pipeline using CSVs from ``data_dir``."""
@@ -610,44 +634,79 @@ def _run_evolution(data_dir: str | Path, *, no_code: int) -> Tuple[Tuple, Tuple]
 
 def get_results(*, data_dir: str | Path = "", no_code: int = 3700, recompute: bool = False):
 
-    return _run_evolution(data_dir, no_code=no_code)
+    base = _resolve_dir(data_dir)
+    cache_key = (base, no_code)
+    if not recompute:
+        with _CACHE_LOCK:
+            cached = _RESULTS_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+    result = _run_evolution(base, no_code=no_code)
+    with _CACHE_LOCK:
+        _RESULTS_CACHE[cache_key] = result
+    return result
 
 # получаем таблицу назначений задач инспекторам
 # (используется в GUI)
-def get_assignment_table(*,
-                         pareto_index: int = 0,
-                         no_code: int = 3700,
+def get_assignment_table(
+    *,
+    pareto_index: int = 0,
+    no_code: int = 3700,
+    data_dir: str | Path = "",
+    recompute: bool = False,
+    pareto_front: Tuple | None = None,
+    new_tasks_df: pd.DataFrame | None = None,
+    inspectors_direction_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
 
-                         data_dir: str | Path = "",
-                         recompute: bool = False) -> pd.DataFrame:
+    base = _resolve_dir(data_dir)
+    if pareto_front is None or recompute:
+        _, pareto_front = get_results(
+            data_dir=base,
+            no_code=no_code,
+            recompute=recompute,
+        )
 
-    _, pareto_front = get_results(data_dir=data_dir, no_code=no_code)
-
-    exp_inspectors_df, df, Auto_Stats_df = _get_dataframe(data_dir)
-    new_tasks_df, inwork_tasks_df, finish_tasks_df = _get_new_type_data(df, Auto_Stats_df, '2024-06-27')
-    no_df, no_inwork_tasks_df, no_new_tasks_df = _filter_by_no(no_code, df, inwork_tasks_df, new_tasks_df)
-    main_inspectors_df, no_inspectors_df  = _create_inspetors_df(no_df, exp_inspectors_df, finish_tasks_df)
-
-    uniq_pareto = pareto_front[2]
-    print(uniq_pareto[pareto_index])
-    
+    uniq_pareto = pareto_front[2] if pareto_front else tuple()
     if len(uniq_pareto) == 0:
         return pd.DataFrame()
 
-    result_df = no_new_tasks_df[
+    if new_tasks_df is None or inspectors_direction_df is None:
+        exp_inspectors_df, df, Auto_Stats_df = _get_dataframe(base)
+        new_tasks_df_full, inwork_tasks_df, finish_tasks_df = _get_new_type_data(
+            df,
+            Auto_Stats_df,
+            '2024-06-27',
+        )
+        no_df, _, default_new_tasks_df = _filter_by_no(
+            no_code,
+            df,
+            inwork_tasks_df,
+            new_tasks_df_full,
+        )
+        _, inspectors_direction_df = _create_inspetors_df(
+            no_df,
+            exp_inspectors_df,
+            finish_tasks_df,
+        )
+        new_tasks_df = default_new_tasks_df
+
+    result_df = new_tasks_df[
         ['Статус РСЗ', 'Тип', 'Потенциальный ущерб, руб', 'ИНН НП',
          'Инспектор, сменивший статус']
     ].copy()
-    
+
     assignments = list(uniq_pareto[pareto_index])
     if len(assignments) != len(result_df):
         raise ValueError(
             f"Pareto individual length ({len(assignments)}) does not match number of new tasks ({len(result_df)})."
         )
+
     result_df['New Inspector index'] = assignments
     result_df.reset_index(inplace=True)
     result_df['Статус РСЗ'] = result_df['Статус РСЗ'].replace('Новое', 'В работе')
-    inspector_lookup = no_inspectors_df.reset_index()[
+    inspector_lookup = inspectors_direction_df.reset_index()[
         ['Инспектор, сменивший статус', 'Inspector index']
     ].drop_duplicates('Inspector index')
     result_df = result_df.merge(

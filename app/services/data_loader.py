@@ -21,12 +21,18 @@ class DataService:
         exp_inspectors_df, df, auto_stats_df = _get_dataframe(data_dir)
         new_tasks_df, inwork_tasks_df, finish_tasks_df = _get_new_type_data(df, auto_stats_df)
 
-        populations, pareto = get_results(data_dir=data_dir, no_code=NO_CODE)
-        assignment = get_assignment_table(data_dir=data_dir, no_code=NO_CODE)
-
         no_df, inwork_no_df, new_no_df = _filter_by_no(NO_CODE, df, inwork_tasks_df, new_tasks_df)
         curr_inspectors, inspectors_direction_df = _create_inspetors_df(
             no_df, exp_inspectors_df, finish_tasks_df
+        )
+
+        populations, pareto = get_results(data_dir=data_dir, no_code=NO_CODE)
+        assignment = get_assignment_table(
+            data_dir=data_dir,
+            no_code=NO_CODE,
+            pareto_front=pareto,
+            new_tasks_df=new_no_df,
+            inspectors_direction_df=inspectors_direction_df,
         )
 
         task_prob, N, M, task_cat, task_dir, den_TNO, maps = _start_data_prep(

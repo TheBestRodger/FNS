@@ -66,10 +66,6 @@ class LoadWorker(QObject):
                 data_dir=self.data_dir,
                 no_code=self.no_code,
             )
-            assignment_df = get_assignment_table(
-                data_dir=self.data_dir,
-                no_code=self.no_code,
-            )
 
             self.progress.emit(45, "Подготовка текущих данных...")
             no_df, inwork_no_df, new_no_df = _filter_by_no(
@@ -77,6 +73,14 @@ class LoadWorker(QObject):
             )
             main_inspectors_df, inspectors_direction_df = _create_inspetors_df(
                 no_df, exp_inspectors_df, finish_tasks_df
+            )
+
+            assignment_df = get_assignment_table(
+                data_dir=self.data_dir,
+                no_code=self.no_code,
+                pareto_front=pareto_front,
+                new_tasks_df=new_no_df,
+                inspectors_direction_df=inspectors_direction_df,
             )
 
             task_prob, N, M, task_cat, task_dir, den_TNO, maps = _start_data_prep(
