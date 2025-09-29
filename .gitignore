@@ -1,6 +1,8 @@
 cache/
 build/
+build2/
 dist/
+dist2/
 __pycache__/
 deap_optim.pkl
 viz.ipynb
