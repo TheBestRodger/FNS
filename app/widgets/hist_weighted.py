@@ -97,16 +97,33 @@ class WeightedCompareWidget(QWidget):
         cand_sorted = candidate[order] if (candidate is not None and candidate.size == baseline.size) \
                       else np.zeros_like(base_sorted)
 
-        n = min(len(inspectors_index), base_sorted.size)
-        x = list(inspectors_index)[:n]
+        inspectors_arr = np.asarray(inspectors_index)
+        if inspectors_arr.size == 0:
+            inspectors_sorted = np.arange(base_sorted.size)
+            valid_mask = np.ones_like(base_sorted, dtype=bool)
+        else:
+            valid_mask = order < inspectors_arr.size
+            inspectors_sorted = inspectors_arr[order[valid_mask]]
 
-        self._ax.bar(x, base_sorted[:n], width=0.8, alpha=0.7, label="Базовое распределение")
-        self._ax.bar(x, cand_sorted[:n], width=0.8, alpha=0.7, label="Новое распределение")
+        base_display = base_sorted[valid_mask]
+        cand_display = cand_sorted[valid_mask]
+
+        n = min(inspectors_sorted.size, base_display.size)
+        x = inspectors_sorted[:n]
+        base_display = base_display[:n]
+        cand_display = cand_display[:n]
+        positions = np.arange(n)
+
+        self._ax.bar(positions, base_display, width=0.8, alpha=0.7, label="Базовое распределение")
+        self._ax.bar(positions, cand_display, width=0.8, alpha=0.7, label="Новое распределение")
 
         mean = float(base_sorted.mean())
         std  = float(base_sorted.std())
         self._ax.axhline(y=mean, linestyle="--", alpha=0.7, label=f"Среднее = {mean:.2f}")
-        self._ax.fill_between(x, [mean-std]*n, [mean+std]*n, alpha=0.2, label=f"±1σ ({std:.2f})")
+        self._ax.fill_between(positions, [mean-std]*n, [mean+std]*n, alpha=0.2, label=f"±1σ ({std:.2f})")
+
+        self._ax.set_xticks(positions)
+        self._ax.set_xticklabels(x.tolist() if isinstance(x, np.ndarray) else list(x))
 
         self._ax.set_xlabel("Инспекторы (отсортированы по базовому ряду)")
         self._ax.set_ylabel(y_label)
